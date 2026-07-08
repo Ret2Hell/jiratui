@@ -1,4 +1,4 @@
-// Package jira contains a small Jira Cloud API client tailored to lazyjira's workflow.
+// Package jira contains a small Jira Cloud API client tailored to jiratui's workflow.
 package jira
 
 import "time"
@@ -54,7 +54,7 @@ type IssueType struct {
 	Subtask bool
 }
 
-// Issue is the minimal issue shape used by lazyjira.
+// Issue is the minimal issue shape used by jiratui.
 type Issue struct {
 	ID          string
 	Key         string

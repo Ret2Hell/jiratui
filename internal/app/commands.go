@@ -8,12 +8,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Ret2Hell/lazyjira/internal/config"
-	"github.com/Ret2Hell/lazyjira/internal/jira"
-	"github.com/Ret2Hell/lazyjira/internal/localstore"
-	"github.com/Ret2Hell/lazyjira/internal/mail"
-	"github.com/Ret2Hell/lazyjira/internal/report"
-	"github.com/Ret2Hell/lazyjira/internal/service"
+	"github.com/Ret2Hell/jiratui/internal/config"
+	"github.com/Ret2Hell/jiratui/internal/jira"
+	"github.com/Ret2Hell/jiratui/internal/localstore"
+	"github.com/Ret2Hell/jiratui/internal/mail"
+	"github.com/Ret2Hell/jiratui/internal/report"
+	"github.com/Ret2Hell/jiratui/internal/service"
 )
 
 func (m *Model) loadCacheCmd() tea.Cmd {

@@ -1,4 +1,4 @@
-// Package config loads and persists lazyjira configuration.
+// Package config loads and persists jiratui configuration.
 package config
 
 import (
@@ -12,7 +12,7 @@ import (
 
 const (
 	// AppName is the application name used for XDG paths and keyring service names.
-	AppName = "lazyjira"
+	AppName = "jiratui"
 )
 
 // Config contains all non-secret application settings.
@@ -39,7 +39,7 @@ type JiraConfig struct {
 	CreateDefaults     map[string]any `yaml:"create_defaults,omitempty"`
 }
 
-// StatusGroups maps Jira status names to lazyjira buckets.
+// StatusGroups maps Jira status names to jiratui buckets.
 type StatusGroups struct {
 	Done       []string `yaml:"done"`
 	InProgress []string `yaml:"in_progress"`

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Ret2Hell/lazyjira/internal/jira"
+	"github.com/Ret2Hell/jiratui/internal/jira"
 )
 
 // Options controls daily report generation.

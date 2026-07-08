@@ -9,7 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/Ret2Hell/lazyjira/internal/jira"
+	"github.com/Ret2Hell/jiratui/internal/jira"
 )
 
 // View renders the root TUI.
@@ -36,7 +36,7 @@ func (m *Model) View() tea.View {
 	if m.cfg.UI.Mouse {
 		view.MouseMode = tea.MouseModeCellMotion
 	}
-	view.WindowTitle = "lazyjira"
+	view.WindowTitle = "jiratui"
 	return view
 }
 
@@ -274,7 +274,7 @@ func (m *Model) renderSetup() string {
 	footer := m.renderFooter(m.setupFooterHelp())
 	bodyHeight := max(1, m.height-lipgloss.Height(footer))
 	var lines []string
-	lines = append(lines, m.styles.Title.Render(fmt.Sprintf("lazyjira setup · step %d/2", m.setupStage+1)))
+	lines = append(lines, m.styles.Title.Render(fmt.Sprintf("jiratui setup · step %d/2", m.setupStage+1)))
 	if m.setupStage == 0 {
 		lines = append(lines, m.styles.Subtitle.Render("Jira first. Enter credentials and project key; account, board, task type, and story points are auto-discovered."))
 	} else {
@@ -387,7 +387,7 @@ func (m *Model) renderReport() string {
 
 func (m *Model) renderHelp() string {
 	content := strings.Join([]string{
-		m.styles.Title.Render("lazyjira help"),
+		m.styles.Title.Render("jiratui help"),
 		"",
 		"Daily workflow:",
 		"  n       new task",

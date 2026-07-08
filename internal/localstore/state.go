@@ -1,4 +1,4 @@
-// Package localstore persists the local-first lazyjira working set.
+// Package localstore persists the local-first jiratui working set.
 package localstore
 
 import (
@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Ret2Hell/lazyjira/internal/config"
-	"github.com/Ret2Hell/lazyjira/internal/jira"
-	"github.com/Ret2Hell/lazyjira/internal/service"
+	"github.com/Ret2Hell/jiratui/internal/config"
+	"github.com/Ret2Hell/jiratui/internal/jira"
+	"github.com/Ret2Hell/jiratui/internal/service"
 )
 
 var unsafePathRE = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)

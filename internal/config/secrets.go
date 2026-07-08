@@ -23,7 +23,7 @@ func SetJiraToken(token string) error {
 
 // JiraToken returns the Jira API token from environment or the OS keyring.
 func JiraToken() (string, error) {
-	if token := os.Getenv("LAZYJIRA_JIRA_TOKEN"); token != "" {
+	if token := os.Getenv("JIRATUI_JIRA_TOKEN"); token != "" {
 		return token, nil
 	}
 	return getSecret(jiraTokenKey)
@@ -36,7 +36,7 @@ func SetMailPassword(password string) error {
 
 // MailPassword returns the IONOS IMAP password from environment or the OS keyring.
 func MailPassword() (string, error) {
-	if password := os.Getenv("LAZYJIRA_MAIL_PASSWORD"); password != "" {
+	if password := os.Getenv("JIRATUI_MAIL_PASSWORD"); password != "" {
 		return password, nil
 	}
 	return getSecret(mailPasswordKey)

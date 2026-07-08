@@ -1,7 +1,7 @@
 package version
 
 // AppName is the CLI and application name.
-const AppName = "lazyjira"
+const AppName = "jiratui"
 
 // Info describes build and version metadata.
 type Info struct {

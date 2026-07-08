@@ -10,10 +10,10 @@ CGO_ENABLED = "0"
 GOCACHE = "{{env.HOME}}/.cache/go-build"
 
 [tasks.build]
-run = "VERSION=$(tr -d '[:space:]' < version); COMMIT=$(git rev-parse --short=12 HEAD); DATE=$(date -u '+%Y-%m-%dT%H:%M:%SZ'); go build -ldflags=\"-s -w -X github.com/Ret2Hell/lazyjira/internal/version.Version=$VERSION -X github.com/Ret2Hell/lazyjira/internal/version.Commit=$COMMIT -X github.com/Ret2Hell/lazyjira/internal/version.Date=$DATE\" -o bin/lazyjira ./cmd/lazyjira/"
+run = "VERSION=$(tr -d '[:space:]' < version); COMMIT=$(git rev-parse --short=12 HEAD); DATE=$(date -u '+%Y-%m-%dT%H:%M:%SZ'); go build -ldflags=\"-s -w -X github.com/Ret2Hell/jiratui/internal/version.Version=$VERSION -X github.com/Ret2Hell/jiratui/internal/version.Commit=$COMMIT -X github.com/Ret2Hell/jiratui/internal/version.Date=$DATE\" -o bin/jiratui ./cmd/jiratui/"
 
 [tasks.start]
-run = "./bin/lazyjira"
+run = "./bin/jiratui"
 
 [tasks.release-snapshot]
 run = "goreleaser release --snapshot --clean"

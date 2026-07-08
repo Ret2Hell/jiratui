@@ -11,7 +11,7 @@ func Path(explicit string) (string, error) {
 	if explicit != "" {
 		return filepath.Abs(explicit)
 	}
-	if env := os.Getenv("LAZYJIRA_CONFIG_FILE"); env != "" {
+	if env := os.Getenv("JIRATUI_CONFIG_FILE"); env != "" {
 		return filepath.Abs(env)
 	}
 	base, err := userConfigDir()

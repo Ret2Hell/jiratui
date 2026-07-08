@@ -7,10 +7,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Ret2Hell/lazyjira/internal/app"
-	"github.com/Ret2Hell/lazyjira/internal/config"
-	"github.com/Ret2Hell/lazyjira/internal/service"
-	"github.com/Ret2Hell/lazyjira/internal/version"
+	"github.com/Ret2Hell/jiratui/internal/app"
+	"github.com/Ret2Hell/jiratui/internal/config"
+	"github.com/Ret2Hell/jiratui/internal/service"
+	"github.com/Ret2Hell/jiratui/internal/version"
 )
 
 func main() {

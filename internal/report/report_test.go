@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ret2Hell/lazyjira/internal/jira"
+	"github.com/Ret2Hell/jiratui/internal/jira"
 )
 
 func TestGenerateDaily(t *testing.T) {

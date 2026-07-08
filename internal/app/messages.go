@@ -1,10 +1,10 @@
 package app
 
 import (
-	"github.com/Ret2Hell/lazyjira/internal/config"
-	"github.com/Ret2Hell/lazyjira/internal/jira"
-	"github.com/Ret2Hell/lazyjira/internal/localstore"
-	"github.com/Ret2Hell/lazyjira/internal/service"
+	"github.com/Ret2Hell/jiratui/internal/config"
+	"github.com/Ret2Hell/jiratui/internal/jira"
+	"github.com/Ret2Hell/jiratui/internal/localstore"
+	"github.com/Ret2Hell/jiratui/internal/service"
 )
 
 type cacheLoadedMsg struct {

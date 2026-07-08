@@ -1,4 +1,4 @@
-module github.com/Ret2Hell/lazyjira
+module github.com/Ret2Hell/jiratui
 
 go 1.26.4
 

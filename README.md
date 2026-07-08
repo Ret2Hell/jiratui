@@ -1,9 +1,9 @@
-# lazyjira
+# jiratui
 
-[![GitHub Release](https://img.shields.io/github/v/release/Ret2Hell/lazyjira?style=flat&color=blue)](https://github.com/Ret2Hell/lazyjira/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/Ret2Hell/lazyjira/ci.yml?label=CI)](https://github.com/Ret2Hell/lazyjira/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/Ret2Hell/jiratui?style=flat&color=blue)](https://github.com/Ret2Hell/jiratui/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/Ret2Hell/jiratui/ci.yml?label=CI)](https://github.com/Ret2Hell/jiratui/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/Go-1.26-blue)](go.mod)
-[![Platform](https://img.shields.io/badge/macOS_%7C_Linux_%7C_Windows-supported-lightgrey)](https://github.com/Ret2Hell/lazyjira/releases/latest)
+[![Platform](https://img.shields.io/badge/macOS_%7C_Linux_%7C_Windows-supported-lightgrey)](https://github.com/Ret2Hell/jiratui/releases/latest)
 [![License](https://img.shields.io/badge/license-see_LICENSE-green)](LICENSE)
 
 A minimal Jira Cloud TUI for active sprint tickets, task creation, status changes, story points, and IONOS daily report drafts.
@@ -13,13 +13,13 @@ A minimal Jira Cloud TUI for active sprint tickets, task creation, status change
 Run without installing:
 
 ```bash
-go run github.com/Ret2Hell/lazyjira/cmd/lazyjira@latest
+go run github.com/Ret2Hell/jiratui/cmd/jiratui@latest
 ```
 
 Install globally:
 
 ```bash
-go install github.com/Ret2Hell/lazyjira/cmd/lazyjira@latest
+go install github.com/Ret2Hell/jiratui/cmd/jiratui@latest
 ```
 
 ## Setup
@@ -27,7 +27,7 @@ go install github.com/Ret2Hell/lazyjira/cmd/lazyjira@latest
 Start the app to open setup when no config exists:
 
 ```bash
-lazyjira
+jiratui
 ```
 
 Setup has two steps:
@@ -48,14 +48,14 @@ Setup keys: `tab` next, `shift+tab` previous, `enter` continue/save, `q` quit.
 Secrets are stored in the OS keyring. You can also use:
 
 ```bash
-LAZYJIRA_JIRA_TOKEN=...
-LAZYJIRA_MAIL_PASSWORD=...
+JIRATUI_JIRA_TOKEN=...
+JIRATUI_MAIL_PASSWORD=...
 ```
 
-Config defaults to `~/.config/lazyjira/config.yaml`. Reopen setup with:
+Config defaults to `~/.config/jiratui/config.yaml`. Reopen setup with:
 
 ```bash
-lazyjira --setup
+jiratui --setup
 ```
 
 ## Keybindings

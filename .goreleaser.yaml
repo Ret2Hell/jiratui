@@ -1,11 +1,11 @@
 version: 2
 
-project_name: lazyjira
+project_name: jiratui
 
 builds:
-  - id: lazyjira
-    main: ./cmd/lazyjira
-    binary: lazyjira
+  - id: jiratui
+    main: ./cmd/jiratui
+    binary: jiratui
     env:
       - CGO_ENABLED=0
     flags:
@@ -13,9 +13,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X github.com/Ret2Hell/lazyjira/internal/version.Version={{ .Version }}
-        -X github.com/Ret2Hell/lazyjira/internal/version.Commit={{ .Commit }}
-        -X github.com/Ret2Hell/lazyjira/internal/version.Date={{ .Date }}
+        -X github.com/Ret2Hell/jiratui/internal/version.Version={{ .Version }}
+        -X github.com/Ret2Hell/jiratui/internal/version.Commit={{ .Commit }}
+        -X github.com/Ret2Hell/jiratui/internal/version.Date={{ .Date }}
     goos:
       - linux
       - darwin
@@ -99,6 +99,6 @@ changelog:
 release:
   github:
     owner: Ret2Hell
-    name: lazyjira
+    name: jiratui
   name_template: "{{ .ProjectName }}: {{ .Tag }}"
   make_latest: true
