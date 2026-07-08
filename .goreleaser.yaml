@@ -1,0 +1,104 @@
+version: 2
+
+project_name: lazyjira
+
+builds:
+  - id: lazyjira
+    main: ./cmd/lazyjira
+    binary: lazyjira
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/Ret2Hell/lazyjira/internal/version.Version={{ .Version }}
+        -X github.com/Ret2Hell/lazyjira/internal/version.Commit={{ .Commit }}
+        -X github.com/Ret2Hell/lazyjira/internal/version.Date={{ .Date }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+
+archives:
+  - id: raw-binaries
+    formats:
+      - binary
+    name_template: >-
+      {{ .ProjectName }}-v{{ .Version }}-
+      {{- if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}-
+      {{- if eq .Arch "amd64" }}x64{{ else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+  - id: compressed
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}-v{{ .Version }}-
+      {{- if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}-
+      {{- if eq .Arch "amd64" }}x64{{ else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - README.md
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: SHASUMS256.txt
+  algorithm: sha256
+
+sboms:
+  - id: archives
+    artifacts: archive
+  - id: binaries
+    artifacts: binary
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  abbrev: 7
+  format: '{{ .Message }} ({{ .SHA }})'
+  filters:
+    exclude:
+      - '^chore:'
+      - '^ci:'
+      - '^build:'
+      - '^test:'
+      - '^refactor:'
+      - '^style:'
+      - '^Merge pull request'
+      - '^Merge branch'
+  groups:
+    - title: Added
+      regexp: '^(feat(\(.+\))?!?:|add(ed)?[[:space:]:]|implement(ed)?[[:space:]:]|expose(d)?[[:space:]:]).+'
+      order: 0
+    - title: Fixed
+      regexp: '^(fix(\(.+\))?!?:|fixed[[:space:]:]|bugfix[[:space:]:]).+'
+      order: 1
+    - title: Documentation
+      regexp: '^(docs?(\(.+\))?:|document(ed)?[[:space:]:]).+'
+      order: 2
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: Ret2Hell
+    name: lazyjira
+  name_template: "{{ .ProjectName }}: {{ .Tag }}"
+  make_latest: true

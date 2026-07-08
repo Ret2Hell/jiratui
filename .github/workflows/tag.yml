@@ -1,0 +1,67 @@
+name: Tag Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Create release tag manually
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Determine release tag
+        id: version
+        run: scripts/read-version.sh github-output
+
+      - name: Validate release token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          test -n "$RELEASE_TOKEN" || {
+            echo "Missing RELEASE_TOKEN secret." >&2
+            echo "A PAT or GitHub App token is required because tags pushed with GITHUB_TOKEN do not trigger workflows." >&2
+            exit 1
+          }
+
+      - name: Create release tag
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          authenticated_remote="https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --tags "$authenticated_remote"
+
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            tagged_commit="$(git rev-list -n 1 "${RELEASE_TAG}")"
+            current_commit="$(git rev-parse HEAD)"
+            if [[ "$tagged_commit" != "$current_commit" ]]; then
+              echo "Tag ${RELEASE_TAG} already exists on a different commit" >&2
+              exit 1
+            fi
+            echo "Tag ${RELEASE_TAG} already exists on this commit; nothing to do"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${RELEASE_TAG}" -m "${RELEASE_TAG}"
+          git push "$authenticated_remote" "refs/tags/${RELEASE_TAG}"

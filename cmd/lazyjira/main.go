@@ -10,9 +10,8 @@ import (
 	"github.com/Ret2Hell/lazyjira/internal/app"
 	"github.com/Ret2Hell/lazyjira/internal/config"
 	"github.com/Ret2Hell/lazyjira/internal/service"
+	"github.com/Ret2Hell/lazyjira/internal/version"
 )
-
-var version = "dev"
 
 func main() {
 	var (
@@ -26,7 +25,8 @@ func main() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Println(version)
+		info := version.Get()
+		fmt.Printf("%s %s\ncommit: %s\nbuilt: %s\n", info.Name, info.Version, info.Commit, info.Built)
 		return
 	}
 
