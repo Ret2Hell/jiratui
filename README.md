@@ -10,6 +10,8 @@ A minimal Jira Cloud TUI for active sprint tickets, task creation, status change
 
 ## Installation
 
+### Go
+
 Run without installing:
 
 ```bash
@@ -20,6 +22,14 @@ Install globally:
 
 ```bash
 go install github.com/Ret2Hell/jiratui/cmd/jiratui@latest
+```
+
+### Arch Linux AUR
+
+Install `jiratui` from the AUR:
+
+```bash
+yay -S jiratui-bin
 ```
 
 ## Setup
