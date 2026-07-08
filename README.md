@@ -1,7 +1,7 @@
 # lazyjira
 
-[![GitHub Release](https://img.shields.io/github/v/release/Ret2Hell/i18n-mcp?style=flat&color=blue)](https://github.com/Ret2Hell/lazyjira/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/Ret2Hell/i18n-mcp/ci.yml?label=CI)](https://github.com/Ret2Hell/lazyjira/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/Ret2Hell/lazyjira?style=flat&color=blue)](https://github.com/Ret2Hell/lazyjira/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/Ret2Hell/lazyjira/ci.yml?label=CI)](https://github.com/Ret2Hell/lazyjira/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/Go-1.26-blue)](go.mod)
 [![Platform](https://img.shields.io/badge/macOS_%7C_Linux_%7C_Windows-supported-lightgrey)](https://github.com/Ret2Hell/lazyjira/releases/latest)
 [![License](https://img.shields.io/badge/license-see_LICENSE-green)](LICENSE)
