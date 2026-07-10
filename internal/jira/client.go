@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -239,9 +240,7 @@ func (c *Client) CreateTask(ctx context.Context, input CreateTaskInput) (Issue, 
 	if input.StoryPoints != nil && input.StoryPointsID != "" {
 		fields[input.StoryPointsID] = *input.StoryPoints
 	}
-	for key, value := range input.AdditionalField {
-		fields[key] = value
-	}
+	maps.Copy(fields, input.AdditionalField)
 	var raw struct {
 		ID  string `json:"id"`
 		Key string `json:"key"`
@@ -398,9 +397,9 @@ func jiraHTTPError(status int, data []byte) error {
 }
 
 func textToADF(text string) map[string]any {
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	content := make([]any, 0, len(lines))
-	for _, line := range lines {
+	lines := strings.SplitSeq(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	var content []any
+	for line := range lines {
 		paragraph := map[string]any{"type": "paragraph"}
 		if line != "" {
 			paragraph["content"] = []any{map[string]any{"type": "text", "text": line}}

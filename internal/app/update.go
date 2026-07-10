@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -479,24 +480,22 @@ func (m *Model) mergeSprintData(remote []jira.Issue) {
 }
 
 func (m *Model) replaceIssue(oldKey string, next jira.Issue) {
-	for i := range m.issues {
-		if m.issues[i].Key == oldKey {
-			m.issues[i] = next
-			return
-		}
+	i := slices.IndexFunc(m.issues, func(issue jira.Issue) bool { return issue.Key == oldKey })
+	if i < 0 {
+		m.issues = append(m.issues, next)
+		return
 	}
-	m.issues = append(m.issues, next)
+	m.issues[i] = next
 }
 
 func (m *Model) removeIssue(key string) {
-	for i := range m.issues {
-		if m.issues[i].Key == key {
-			m.issues = append(m.issues[:i], m.issues[i+1:]...)
-			if m.selected >= len(m.visibleIssues()) {
-				m.selected = max(0, len(m.visibleIssues())-1)
-			}
-			return
-		}
+	i := slices.IndexFunc(m.issues, func(issue jira.Issue) bool { return issue.Key == key })
+	if i < 0 {
+		return
+	}
+	m.issues = slices.Delete(m.issues, i, i+1)
+	if m.selected >= len(m.visibleIssues()) {
+		m.selected = max(0, len(m.visibleIssues())-1)
 	}
 }
 
@@ -552,12 +551,11 @@ func optimisticStatus(target string) jira.Status {
 }
 
 func (m *Model) issueByKey(key string) (jira.Issue, bool) {
-	for _, issue := range m.issues {
-		if issue.Key == key {
-			return issue, true
-		}
+	i := slices.IndexFunc(m.issues, func(issue jira.Issue) bool { return issue.Key == key })
+	if i < 0 {
+		return jira.Issue{}, false
 	}
-	return jira.Issue{}, false
+	return m.issues[i], true
 }
 
 func statusEqual(a jira.Status, b jira.Status) bool {
@@ -624,9 +622,8 @@ func (m *Model) parseSetup() (config.Config, string, string, error) {
 }
 
 func splitCSV(value string) []string {
-	parts := strings.Split(value, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
+	var out []string
+	for part := range strings.SplitSeq(value, ",") {
 		if trimmed := strings.TrimSpace(part); trimmed != "" {
 			out = append(out, trimmed)
 		}

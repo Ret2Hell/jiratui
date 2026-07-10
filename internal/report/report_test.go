@@ -67,7 +67,14 @@ func TestGenerateDailyLastStatusChangeWins(t *testing.T) {
 
 	body := GenerateDaily(issues, changes, Options{ProjectName: "OteraX", SprintName: "Sprint 63", Day: day, Location: time.UTC, DeliveryDefault: "G", BlockersDefault: "None"})
 
-	doneSection := body[strings.Index(body, "✅ Done"):strings.Index(body, "🚧 Work In-Progress")]
+	_, afterDoneHeading, ok := strings.Cut(body, "✅ Done")
+	if !ok {
+		t.Fatalf("report missing done section:\n%s", body)
+	}
+	doneSection, _, ok := strings.Cut(afterDoneHeading, "🚧 Work In-Progress")
+	if !ok {
+		t.Fatalf("report missing work-in-progress section:\n%s", body)
+	}
 	if strings.Contains(doneSection, "Reopened task") {
 		t.Fatalf("reopened task should not remain in done section:\n%s", body)
 	}
@@ -77,11 +84,9 @@ func TestGenerateDailyLastStatusChangeWins(t *testing.T) {
 }
 
 func TestTotals(t *testing.T) {
-	p3 := 3.0
-	p5 := 5.0
 	got := Totals([]jira.Issue{
-		{Status: jira.Status{Category: jira.StatusCategory{Key: "done"}}, StoryPoints: &p3},
-		{Status: jira.Status{Category: jira.StatusCategory{Key: "indeterminate"}}, StoryPoints: &p5},
+		{Status: jira.Status{Category: jira.StatusCategory{Key: "done"}}, StoryPoints: new(3.0)},
+		{Status: jira.Status{Category: jira.StatusCategory{Key: "indeterminate"}}, StoryPoints: new(5.0)},
 	})
 	if got.Total != 8 || got.Done != 3 || got.InProgress != 5 {
 		t.Fatalf("unexpected totals: %+v", got)

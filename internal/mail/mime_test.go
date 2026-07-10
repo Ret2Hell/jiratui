@@ -26,11 +26,11 @@ func TestBuildMessage(t *testing.T) {
 		}
 	}
 
-	bodyStart := strings.Index(text, "\r\n\r\n")
-	if bodyStart == -1 {
+	_, encodedBody, ok := strings.Cut(text, "\r\n\r\n")
+	if !ok {
 		t.Fatalf("message missing body separator:\n%s", text)
 	}
-	decoded, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(text[bodyStart+4:])))
+	decoded, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(encodedBody)))
 	if err != nil {
 		t.Fatal(err)
 	}

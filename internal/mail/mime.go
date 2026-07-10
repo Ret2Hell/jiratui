@@ -60,11 +60,11 @@ func BuildMessage(d Draft) ([]byte, error) {
 
 func htmlBody(body string) string {
 	body = strings.TrimLeft(body, "\r\n \t")
-	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+	lines := strings.SplitSeq(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
 	var b strings.Builder
 	b.WriteString(`<html><head><style>html,body{margin:0!important;padding:0!important;background:transparent!important;}a{color:#0891b2!important;text-decoration:underline!important;}</style></head><body style="margin:0!important;padding:0!important;background:transparent!important;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.45;color:#2f3137;"><div style="margin:0!important;padding:28px 40px!important;background:transparent!important;">`)
 	inList := false
-	for _, line := range lines {
+	for line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
@@ -107,8 +107,8 @@ func isReportHeading(line string) bool {
 
 func reportListItem(line string) (string, bool) {
 	for _, marker := range []string{"- ", "• "} {
-		if strings.HasPrefix(line, marker) {
-			return strings.TrimSpace(strings.TrimPrefix(line, marker)), true
+		if item, ok := strings.CutPrefix(line, marker); ok {
+			return strings.TrimSpace(item), true
 		}
 	}
 	return "", false
@@ -135,8 +135,8 @@ func normalizeReportHeading(line string) string {
 	case "📝 TODO Next":
 		return "📝 Next Step"
 	}
-	if strings.HasPrefix(line, "🚦") {
-		return "🚦 " + strings.TrimSpace(strings.TrimPrefix(line, "🚦"))
+	if rest, ok := strings.CutPrefix(line, "🚦"); ok {
+		return "🚦 " + strings.TrimSpace(rest)
 	}
 	return strings.TrimSpace(line)
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,11 +9,8 @@ import (
 
 // Path returns the config file path, honoring explicit paths and XDG_CONFIG_HOME.
 func Path(explicit string) (string, error) {
-	if explicit != "" {
-		return filepath.Abs(explicit)
-	}
-	if env := os.Getenv("JIRATUI_CONFIG_FILE"); env != "" {
-		return filepath.Abs(env)
+	if configured := cmp.Or(explicit, os.Getenv("JIRATUI_CONFIG_FILE")); configured != "" {
+		return filepath.Abs(configured)
 	}
 	base, err := userConfigDir()
 	if err != nil {

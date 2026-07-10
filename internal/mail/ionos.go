@@ -2,8 +2,10 @@ package mail
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -32,17 +34,17 @@ func (c Client) SaveDraft(ctx context.Context, d Draft) error {
 	if err := c.validate(); err != nil {
 		return err
 	}
-	var failures []string
+	var failures []error
 	for _, mailbox := range c.draftMailboxCandidates() {
 		for _, withDraftFlag := range []bool{true, false} {
 			if err := c.appendDraft(ctx, mailbox, message, withDraftFlag); err != nil {
-				failures = append(failures, err.Error())
+				failures = append(failures, err)
 				continue
 			}
 			return nil
 		}
 	}
-	return fmt.Errorf("append draft failed for candidate mailboxes %s: %s", strings.Join(c.draftMailboxCandidates(), ", "), strings.Join(failures, "; "))
+	return fmt.Errorf("append draft failed for candidate mailboxes %s: %w", strings.Join(c.draftMailboxCandidates(), ", "), errors.Join(failures...))
 }
 
 func (c Client) appendDraft(ctx context.Context, mailbox string, message []byte, withDraftFlag bool) error {
@@ -115,9 +117,7 @@ func (c Client) normalized() Client {
 	c.Host = strings.TrimSpace(c.Host)
 	c.Username = strings.TrimSpace(c.Username)
 	c.DraftsMailbox = strings.TrimSpace(c.DraftsMailbox)
-	if c.Port == 0 {
-		c.Port = 993
-	}
+	c.Port = cmp.Or(c.Port, 993)
 	return c
 }
 

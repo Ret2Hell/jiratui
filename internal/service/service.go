@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -145,12 +146,14 @@ func (s *JiraService) MoveToStatus(ctx context.Context, issueKey, target string)
 	if err != nil {
 		return jira.Status{}, err
 	}
-	for _, transition := range transitions {
-		if statusMatches(transition.ToStatus, target) {
-			return transition.ToStatus, s.jira.TransitionIssue(ctx, issueKey, transition.ID)
-		}
+	i := slices.IndexFunc(transitions, func(transition jira.Transition) bool {
+		return statusMatches(transition.ToStatus, target)
+	})
+	if i < 0 {
+		return jira.Status{}, fmt.Errorf("no transition to %s available for %s", target, issueKey)
 	}
-	return jira.Status{}, fmt.Errorf("no transition to %s available for %s", target, issueKey)
+	transition := transitions[i]
+	return transition.ToStatus, s.jira.TransitionIssue(ctx, issueKey, transition.ID)
 }
 
 // UpdateStoryPoints updates the configured story-points field.

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -83,24 +85,16 @@ func StatusCategoryForName(status string) string {
 }
 
 func containsAnyStatusTerm(value string, terms ...string) bool {
-	for _, term := range terms {
-		if containsStatusTerm(value, term) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(terms, func(term string) bool {
+		return containsStatusTerm(value, term)
+	})
 }
 
 func containsStatusTerm(value string, term string) bool {
 	if term == "" {
 		return false
 	}
-	for i := 0; i+len(term) <= len(value); i++ {
-		if value[i:i+len(term)] == term {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(value, term)
 }
 
 // IsSameLocalDay reports whether t falls on day in loc.

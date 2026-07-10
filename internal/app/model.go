@@ -272,16 +272,14 @@ func storyPointValues() []float64 {
 func selectedStoryPoints(index int) *float64 {
 	values := storyPointValues()
 	index = min(max(0, index), len(values)-1)
-	value := values[index]
-	return &value
+	return new(values[index])
 }
 
 func cloneFloat(value *float64) *float64 {
 	if value == nil {
 		return nil
 	}
-	cloned := *value
-	return &cloned
+	return new(*value)
 }
 
 func (m *Model) pendingSyncCount() int {

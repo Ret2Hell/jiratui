@@ -105,14 +105,13 @@ func parseFloatPtr(value any) *float64 {
 	case nil:
 		return nil
 	case float64:
-		return &v
+		return new(v)
 	case int:
-		f := float64(v)
-		return &f
+		return new(float64(v))
 	case json.Number:
 		f, err := v.Float64()
 		if err == nil {
-			return &f
+			return new(f)
 		}
 	case string:
 		if v == "" {
@@ -120,7 +119,7 @@ func parseFloatPtr(value any) *float64 {
 		}
 		f, err := strconv.ParseFloat(v, 64)
 		if err == nil {
-			return &f
+			return new(f)
 		}
 	}
 	return nil

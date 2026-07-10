@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,7 +29,7 @@ func (m *Model) saveCacheCmd() tea.Cmd {
 	state := localstore.State{
 		ProjectName: firstNonEmpty(m.projectName, m.cfg.Jira.ProjectName),
 		Sprint:      m.sprint,
-		Issues:      append([]jira.Issue(nil), m.issues...),
+		Issues:      slices.Clone(m.issues),
 		Draft:       m.reportDraft,
 	}
 	cfg := m.cfg
@@ -167,7 +169,7 @@ func (m *Model) generateReportCmd(open bool) tea.Cmd {
 	if m.service == nil {
 		return func() tea.Msg { return errMsg{Err: fmt.Errorf("service is not configured")} }
 	}
-	issues := append([]jira.Issue(nil), m.issues...)
+	issues := slices.Clone(m.issues)
 	version := m.reportVersion
 	m.refreshingReport = true
 	return func() tea.Msg {
@@ -183,7 +185,7 @@ func (m *Model) generateReportCmd(open bool) tea.Cmd {
 
 func (m *Model) refreshLocalDraft() {
 	m.reportVersion++
-	issues := append([]jira.Issue(nil), m.issues...)
+	issues := slices.Clone(m.issues)
 	loc := time.Local
 	if m.cfg.Report.Timezone != "" && m.cfg.Report.Timezone != "Local" {
 		if loaded, err := time.LoadLocation(m.cfg.Report.Timezone); err == nil {
@@ -191,10 +193,7 @@ func (m *Model) refreshLocalDraft() {
 		}
 	}
 	now := time.Now().In(loc)
-	changes := make([]jira.StatusChange, 0, len(m.localStatusChanges))
-	for _, change := range m.localStatusChanges {
-		changes = append(changes, change)
-	}
+	changes := slices.Collect(maps.Values(m.localStatusChanges))
 	body := report.GenerateDaily(issues, changes, report.Options{
 		ProjectLabel:        m.cfg.Report.ProjectLabel,
 		ProjectName:         firstNonEmpty(m.projectName, m.cfg.Jira.ProjectName),

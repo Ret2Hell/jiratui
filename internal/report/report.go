@@ -2,8 +2,9 @@
 package report
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -45,22 +46,9 @@ func GenerateDaily(issues []jira.Issue, changes []jira.StatusChange, opts Option
 	if opts.TodoNextLimit <= 0 {
 		opts.TodoNextLimit = 1
 	}
-	projectLabel := opts.ProjectLabel
-	if projectLabel == "" {
-		projectName := opts.ProjectName
-		if projectName == "" {
-			projectName = "Project"
-		}
-		projectLabel = "Project Name - " + projectName
-	}
-	blockersDefault := opts.BlockersDefault
-	if blockersDefault == "" {
-		blockersDefault = "None"
-	}
-	delivery := opts.DeliveryDefault
-	if delivery == "" {
-		delivery = "G"
-	}
+	projectLabel := cmp.Or(opts.ProjectLabel, "Project Name - "+cmp.Or(opts.ProjectName, "Project"))
+	blockersDefault := cmp.Or(opts.BlockersDefault, "None")
+	delivery := cmp.Or(opts.DeliveryDefault, "G")
 
 	issueByKey := map[string]jira.Issue{}
 	for _, issue := range issues {
@@ -138,7 +126,7 @@ func filterReportChanges(changes []jira.StatusChange, opts Options) []jira.Statu
 		}
 		filtered = append(filtered, change)
 	}
-	sort.SliceStable(filtered, func(i, j int) bool { return filtered[i].At.Before(filtered[j].At) })
+	slices.SortStableFunc(filtered, func(a, b jira.StatusChange) int { return a.At.Compare(b.At) })
 	return filtered
 }
 
@@ -158,7 +146,7 @@ func issuesFromKeys(keys map[string]struct{}, issueByKey map[string]jira.Issue) 
 			issues = append(issues, jira.Issue{Key: key, Summary: key})
 		}
 	}
-	sort.Slice(issues, func(i, j int) bool { return issues[i].Key < issues[j].Key })
+	slices.SortFunc(issues, func(a, b jira.Issue) int { return strings.Compare(a.Key, b.Key) })
 	return issues
 }
 

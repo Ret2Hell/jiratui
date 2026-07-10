@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -146,7 +147,7 @@ func (m *Model) renderPanel(title string, content string, width int, outerHeight
 	outerHeight = max(4, outerHeight)
 	contentW := max(1, width-4)
 	innerH := max(1, outerHeight-2)
-	lines := append([]string{m.styles.Subtitle.Render(title)}, strings.Split(content, "\n")...)
+	lines := slices.Insert(slices.Collect(strings.SplitSeq(content, "\n")), 0, m.styles.Subtitle.Render(title))
 	if len(lines) > innerH {
 		lines = lines[:innerH]
 	}
@@ -503,7 +504,7 @@ func createModalWidth(screenWidth int) int {
 }
 
 func addDropShadow(value string) string {
-	lines := strings.Split(value, "\n")
+	lines := slices.Collect(strings.SplitSeq(value, "\n"))
 	width := maxLineWidth(lines)
 	shadow := lipgloss.NewStyle().Background(lipgloss.Color("#0B1120")).Render
 	for i := range lines {
@@ -520,12 +521,12 @@ func overlayCentered(background string, overlay string, width int, height int) s
 	width = max(1, width)
 	height = max(1, height)
 	bgLines := normalizeLines(background, width, height)
-	overlayLines := strings.Split(overlay, "\n")
+	overlayLines := slices.Collect(strings.SplitSeq(overlay, "\n"))
 	overlayWidth := min(width, maxLineWidth(overlayLines))
 	overlayHeight := min(height, len(overlayLines))
 	x := max(0, (width-overlayWidth)/2)
 	y := max(0, (height-overlayHeight)/2)
-	for row := 0; row < overlayHeight; row++ {
+	for row := range overlayHeight {
 		idx := y + row
 		line := padRight(truncatePlain(overlayLines[row], overlayWidth), overlayWidth)
 		base := bgLines[idx]
@@ -537,7 +538,7 @@ func overlayCentered(background string, overlay string, width int, height int) s
 }
 
 func normalizeLines(value string, width int, height int) []string {
-	lines := strings.Split(value, "\n")
+	lines := slices.Collect(strings.SplitSeq(value, "\n"))
 	if len(lines) > height {
 		lines = lines[:height]
 	}
@@ -589,7 +590,7 @@ func createSingleLineField(value string, cursorPosition int, placeholder string,
 	runes := []rune(value)
 	cursorPosition = min(max(0, cursorPosition), len(runes))
 	if focused {
-		runes = append(runes[:cursorPosition], append([]rune{'▌'}, runes[cursorPosition:]...)...)
+		runes = slices.Insert(runes, cursorPosition, '▌')
 	}
 	if len(runes) <= width {
 		return string(runes)
@@ -645,7 +646,7 @@ func createSingleLineField(value string, cursorPosition int, placeholder string,
 
 func wrapWords(value string, width int) []string {
 	width = max(1, width)
-	words := strings.Fields(value)
+	words := slices.Collect(strings.FieldsSeq(value))
 	if len(words) == 0 {
 		return []string{""}
 	}
