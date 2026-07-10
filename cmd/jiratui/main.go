@@ -54,7 +54,7 @@ func main() {
 		}
 	}
 
-	model := app.New(cfg, resolvedPath, svc, factory, initialStatus)
+	model := app.New(cfg, resolvedPath, svc, factory, initialStatus, forceSetup)
 	program := tea.NewProgram(model)
 	if _, err := program.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
