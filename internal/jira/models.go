@@ -49,9 +49,10 @@ type Status struct {
 
 // IssueType is a Jira issue type.
 type IssueType struct {
-	ID      string
-	Name    string
-	Subtask bool
+	ID               string
+	Name             string
+	UntranslatedName string
+	Subtask          bool
 }
 
 // Issue is the minimal issue shape used by jiratui.

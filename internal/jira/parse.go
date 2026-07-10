@@ -31,6 +31,17 @@ type issueJSON struct {
 	Fields map[string]any `json:"fields"`
 }
 
+type issueTypeJSON struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	UntranslatedName string `json:"untranslatedName"`
+	Subtask          bool   `json:"subtask"`
+}
+
+func (raw issueTypeJSON) issueType() IssueType {
+	return IssueType(raw)
+}
+
 func parseSprint(raw sprintJSON) Sprint {
 	return Sprint{
 		ID:        raw.ID,
@@ -75,14 +86,11 @@ func parseStatusFromAny(value any) Status {
 }
 
 func parseIssueType(value any) IssueType {
-	var raw struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	}
+	var raw issueTypeJSON
 	if remarshal(value, &raw) != nil {
 		return IssueType{}
 	}
-	return IssueType{ID: raw.ID, Name: raw.Name}
+	return raw.issueType()
 }
 
 func parseUserPtr(value any) *User {
