@@ -394,16 +394,45 @@ func discoverProject(ctx context.Context, client *jira.Client, projectKey string
 }
 
 func discoverTaskIssueTypeID(issueTypes []jira.IssueType) (string, error) {
-	for _, issueType := range issueTypes {
-		if !issueType.Subtask && strings.EqualFold(issueType.Name, "Task") {
-			return issueType.ID, nil
+	matchers := []func(jira.IssueType) bool{
+		func(issueType jira.IssueType) bool {
+			return strings.EqualFold(strings.TrimSpace(issueType.UntranslatedName), "Task")
+		},
+		func(issueType jira.IssueType) bool {
+			return strings.EqualFold(strings.TrimSpace(issueType.Name), "Task")
+		},
+		func(issueType jira.IssueType) bool {
+			return strings.Contains(strings.ToLower(strings.TrimSpace(issueType.UntranslatedName)), "task")
+		},
+		func(issueType jira.IssueType) bool {
+			return strings.Contains(strings.ToLower(strings.TrimSpace(issueType.Name)), "task")
+		},
+	}
+	for _, matches := range matchers {
+		index := slices.IndexFunc(issueTypes, func(issueType jira.IssueType) bool {
+			return !issueType.Subtask && matches(issueType)
+		})
+		if index >= 0 {
+			return issueTypes[index].ID, nil
 		}
 	}
+
+	available := make([]string, 0, len(issueTypes))
+	seen := make(map[string]struct{}, len(issueTypes))
 	for _, issueType := range issueTypes {
-		name := strings.ToLower(issueType.Name)
-		if !issueType.Subtask && strings.Contains(name, "task") {
-			return issueType.ID, nil
+		name := strings.TrimSpace(issueType.Name)
+		if issueType.Subtask || name == "" {
+			continue
 		}
+		key := strings.ToLower(name)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		available = append(available, name)
+	}
+	if len(available) > 0 {
+		return "", fmt.Errorf("could not auto-discover a Task issue type for this project (available: %s)", strings.Join(available, ", "))
 	}
 	return "", fmt.Errorf("could not auto-discover a Task issue type for this project")
 }

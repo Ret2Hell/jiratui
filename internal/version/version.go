@@ -1,5 +1,7 @@
 package version
 
+import "runtime/debug"
+
 // AppName is the CLI and application name.
 const AppName = "jiratui"
 
@@ -20,10 +22,34 @@ var (
 
 // Get returns the current build and version metadata.
 func Get() Info {
-	return Info{
+	info := Info{
 		Name:    AppName,
 		Version: Version,
 		Commit:  Commit,
 		Built:   Date,
 	}
+
+	build, ok := debug.ReadBuildInfo()
+	if !ok {
+		return info
+	}
+
+	if info.Version == "dev" && build.Main.Version != "" && build.Main.Version != "(devel)" {
+		info.Version = build.Main.Version
+	}
+
+	for _, setting := range build.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			if info.Commit == "none" {
+				info.Commit = setting.Value
+			}
+		case "vcs.time":
+			if info.Built == "unknown" {
+				info.Built = setting.Value
+			}
+		}
+	}
+
+	return info
 }

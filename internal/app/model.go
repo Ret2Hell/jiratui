@@ -102,7 +102,7 @@ type Model struct {
 }
 
 // New creates the root TUI model.
-func New(cfg config.Config, configPath string, svc service.Service, factory service.Factory, initialStatus string) *Model {
+func New(cfg config.Config, configPath string, svc service.Service, factory service.Factory, initialStatus string, forceSetup bool) *Model {
 	m := &Model{
 		cfg:                   cfg,
 		configPath:            configPath,
@@ -120,9 +120,9 @@ func New(cfg config.Config, configPath string, svc service.Service, factory serv
 	}
 	m.prefix = m.zones.NewPrefix()
 	m.initInputs()
-	if svc == nil || !cfg.IsConfigured() {
+	if forceSetup || svc == nil || !cfg.IsConfigured() {
 		m.screen = screenSetup
-		if cfg.IsJiraConfigured() {
+		if !forceSetup && cfg.IsJiraConfigured() {
 			m.setupStage = 1
 			m.status = firstNonEmpty(initialStatus, "Jira setup already saved. Complete IONOS setup.")
 			m.focusSetup(m.setupStageStart())

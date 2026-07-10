@@ -88,21 +88,17 @@ func (c *Client) Project(ctx context.Context, projectKeyOrID string) (Project, e
 	path := fmt.Sprintf("/rest/api/3/project/%s", url.PathEscape(projectKeyOrID))
 	params := url.Values{"expand": {"issueTypes"}}
 	var raw struct {
-		ID         string `json:"id"`
-		Key        string `json:"key"`
-		Name       string `json:"name"`
-		IssueTypes []struct {
-			ID      string `json:"id"`
-			Name    string `json:"name"`
-			Subtask bool   `json:"subtask"`
-		} `json:"issueTypes"`
+		ID         string          `json:"id"`
+		Key        string          `json:"key"`
+		Name       string          `json:"name"`
+		IssueTypes []issueTypeJSON `json:"issueTypes"`
 	}
 	if err := c.do(ctx, http.MethodGet, path, params, nil, &raw); err != nil {
 		return Project{}, err
 	}
 	project := Project{ID: raw.ID, Key: raw.Key, Name: raw.Name, IssueTypes: make([]IssueType, 0, len(raw.IssueTypes))}
 	for _, issueType := range raw.IssueTypes {
-		project.IssueTypes = append(project.IssueTypes, IssueType{ID: issueType.ID, Name: issueType.Name, Subtask: issueType.Subtask})
+		project.IssueTypes = append(project.IssueTypes, issueType.issueType())
 	}
 	return project, nil
 }
@@ -113,17 +109,13 @@ func (c *Client) ProjectIssueTypes(ctx context.Context, projectID string) ([]Iss
 		return nil, errors.New("project id is required")
 	}
 	params := url.Values{"projectId": {projectID}}
-	var raw []struct {
-		ID      string `json:"id"`
-		Name    string `json:"name"`
-		Subtask bool   `json:"subtask"`
-	}
+	var raw []issueTypeJSON
 	if err := c.do(ctx, http.MethodGet, "/rest/api/3/issuetype/project", params, nil, &raw); err != nil {
 		return nil, err
 	}
 	issueTypes := make([]IssueType, 0, len(raw))
 	for _, issueType := range raw {
-		issueTypes = append(issueTypes, IssueType{ID: issueType.ID, Name: issueType.Name, Subtask: issueType.Subtask})
+		issueTypes = append(issueTypes, issueType.issueType())
 	}
 	return issueTypes, nil
 }

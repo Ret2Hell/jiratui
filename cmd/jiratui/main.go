@@ -26,7 +26,13 @@ func main() {
 
 	if showVersion {
 		info := version.Get()
-		fmt.Printf("%s %s\ncommit: %s\nbuilt: %s\n", info.Name, info.Version, info.Commit, info.Built)
+		fmt.Printf("%s %s\n", info.Name, info.Version)
+		if info.Commit != "none" {
+			fmt.Printf("commit: %s\n", info.Commit)
+		}
+		if info.Built != "unknown" {
+			fmt.Printf("built: %s\n", info.Built)
+		}
 		return
 	}
 
@@ -48,7 +54,7 @@ func main() {
 		}
 	}
 
-	model := app.New(cfg, resolvedPath, svc, factory, initialStatus)
+	model := app.New(cfg, resolvedPath, svc, factory, initialStatus, forceSetup)
 	program := tea.NewProgram(model)
 	if _, err := program.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
