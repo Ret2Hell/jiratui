@@ -6,7 +6,7 @@
 [![Platform](https://img.shields.io/badge/macOS_%7C_Linux_%7C_Windows-supported-lightgrey)](https://github.com/Ret2Hell/jiratui/releases/latest)
 [![License](https://img.shields.io/badge/license-see_LICENSE-green)](LICENSE)
 
-A minimal Jira Cloud TUI for active sprint tickets, task creation, status changes, story points, and IONOS daily report drafts.
+A minimal Jira Cloud TUI for active sprint tickets, task creation and editing with summary and description support, status changes, story points, and IONOS daily report drafts.
 
 ## Installation
 
@@ -73,14 +73,20 @@ jiratui --setup
 | Key | Action |
 | --- | --- |
 | `q` | quit |
-| `?` | help |
+| `?` | open grouped keybindings |
 | `r` | refresh tickets |
 | `/` | filter tickets |
+| `tab` | switch panel focus |
+| `↑` / `↓`, `j` / `k` | move selection or scroll focused panel |
+| `pgup` / `pgdown` | move one page |
+| `home` / `end`, `g` / `G` | jump to the beginning or end |
+| Mouse wheel | scroll the panel under the pointer |
 | `n` | create task |
+| `e` / `R` | edit selected task |
 | `enter` | set story points |
 | `t` | move to To Do |
 | `p` / `i` | move to In Progress |
 | `x` / `d` | move to Done |
-| `m` / `R` | open daily report draft |
+| `m` | open daily report draft |
 | `ctrl+s` | save report draft |
 | `esc` | cancel/close |

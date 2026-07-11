@@ -56,6 +56,7 @@ func parseIssue(raw issueJSON, storyPointsFieldID string) Issue {
 	fields := raw.Fields
 	issue := Issue{ID: raw.ID, Key: raw.Key}
 	issue.Summary, _ = fields["summary"].(string)
+	issue.Description = parseADFText(fields["description"])
 	issue.Status = parseStatusFromAny(fields["status"])
 	issue.IssueType = parseIssueType(fields["issuetype"])
 	issue.Assignee = parseUserPtr(fields["assignee"])
@@ -64,6 +65,73 @@ func parseIssue(raw issueJSON, storyPointsFieldID string) Issue {
 		issue.StoryPoints = parseFloatPtr(fields[storyPointsFieldID])
 	}
 	return issue
+}
+
+type adfNode struct {
+	Type    string         `json:"type"`
+	Text    string         `json:"text"`
+	Attrs   map[string]any `json:"attrs"`
+	Content []adfNode      `json:"content"`
+}
+
+func parseADFText(value any) string {
+	if value == nil {
+		return ""
+	}
+	var root adfNode
+	if remarshal(value, &root) != nil {
+		return ""
+	}
+	return strings.TrimSpace(adfText(root))
+}
+
+func adfText(node adfNode) string {
+	switch node.Type {
+	case "text":
+		return node.Text
+	case "hardBreak":
+		return "\n"
+	case "mention":
+		return firstADFAttr(node, "text", "displayName", "id")
+	case "emoji":
+		return firstADFAttr(node, "text", "shortName")
+	case "inlineCard", "blockCard", "embedCard":
+		return firstADFAttr(node, "url")
+	case "media":
+		return firstADFAttr(node, "alt", "title")
+	case "date":
+		return firstADFAttr(node, "timestamp")
+	case "status":
+		return firstADFAttr(node, "text")
+	case "rule":
+		return "---"
+	}
+	var builder strings.Builder
+	for i, child := range node.Content {
+		builder.WriteString(adfText(child))
+		if i < len(node.Content)-1 && isADFBlock(child.Type) {
+			builder.WriteByte('\n')
+		}
+	}
+	return builder.String()
+}
+
+func firstADFAttr(node adfNode, keys ...string) string {
+	for _, key := range keys {
+		if value := asString(node.Attrs[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func isADFBlock(nodeType string) bool {
+	switch nodeType {
+	case "paragraph", "heading", "blockquote", "listItem", "bulletList", "orderedList", "codeBlock":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseStatus(raw statusJSON) Status {

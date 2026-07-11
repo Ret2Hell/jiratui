@@ -41,6 +41,16 @@ type indexedIssue struct {
 	Issue jira.Issue
 }
 
+type taskContent struct {
+	Summary     string
+	Description string
+}
+
+type pendingTaskUpdate struct {
+	Original taskContent
+	Desired  taskContent
+}
+
 // Model is the root Bubble Tea model.
 type Model struct {
 	cfg        config.Config
@@ -66,12 +76,16 @@ type Model struct {
 	status              string
 	err                 error
 
-	projectName  string
-	sprint       jira.Sprint
-	issues       []jira.Issue
-	selected     int
-	tempIssueSeq int
-	totals       report.PointTotals
+	projectName         string
+	sprint              jira.Sprint
+	issues              []jira.Issue
+	selected            int
+	ticketViewport      listViewport
+	detailsViewport     listViewport
+	keybindingsViewport listViewport
+	modalParent         screen
+	tempIssueSeq        int
+	totals              report.PointTotals
 
 	filtering   bool
 	filterInput textinput.Model
@@ -81,14 +95,19 @@ type Model struct {
 	setupFocus  int
 	setupStage  int
 
-	createSummary textinput.Model
-	createFocus   int
+	createSummary          textinput.Model
+	createDescription      textarea.Model
+	createFocus            int
+	editingTaskKey         string
+	editingTaskOriginal    string
+	editingTaskDescription string
 
 	pointSelected         int
 	pointEditingKey       string
 	pointOriginal         *float64
 	pendingPointOriginals map[string]*float64
 	pendingStatusOriginal map[string]jira.Status
+	pendingTaskUpdates    map[string]pendingTaskUpdate
 	pendingCreates        map[string]jira.Issue
 	localStatusChanges    map[string]jira.StatusChange
 
@@ -114,6 +133,7 @@ func New(cfg config.Config, configPath string, svc service.Service, factory serv
 		status:                initialStatus,
 		pendingPointOriginals: make(map[string]*float64),
 		pendingStatusOriginal: make(map[string]jira.Status),
+		pendingTaskUpdates:    make(map[string]pendingTaskUpdate),
 		pendingCreates:        make(map[string]jira.Issue),
 		localStatusChanges:    make(map[string]jira.StatusChange),
 		selectionSpring:       harmonica.NewSpring(harmonica.FPS(60), 10, 0.8),
@@ -184,24 +204,33 @@ func (m *Model) initInputs() {
 
 	m.createSummary = textinput.New()
 	m.createSummary.Placeholder = "What needs to be done?"
+	m.createSummary.Prompt = ""
 	m.createSummary.Focus()
 
+	m.createDescription = textarea.New()
+	m.createDescription.Placeholder = "Add context, acceptance criteria, or implementation notes…"
+	m.createDescription.Prompt = ""
+	m.createDescription.ShowLineNumbers = false
+	m.createDescription.Blur()
+
 	m.reportEditor = textarea.New()
+	m.reportEditor.Prompt = ""
 	m.reportEditor.ShowLineNumbers = false
 }
 
 func (m *Model) setComponentWidths() {
-	contentWidth := max(40, m.width-4)
+	contentWidth := max(1, m.width-4)
 	setupWidth := max(12, min(70, contentWidth-24))
 	for i := range m.setupInputs {
 		m.setupInputs[i].SetWidth(setupWidth)
 	}
-	m.filterInput.SetWidth(max(10, contentWidth-4))
-	createWidth := createModalWidth(m.width)
-	createInputWidth := max(20, createWidth-10)
+	m.filterInput.SetWidth(max(1, contentWidth-4))
+	createWidth := min(max(1, m.width), popupWidth(m.width, 100, 80))
+	createInputWidth := max(1, createWidth-4)
 	m.createSummary.SetWidth(createInputWidth)
-	m.reportEditor.SetWidth(max(20, contentWidth-8))
-	m.reportEditor.SetHeight(max(8, m.height-8))
+	m.createDescription.SetWidth(createInputWidth)
+	m.reportEditor.SetWidth(max(1, contentWidth-8))
+	m.reportEditor.SetHeight(max(1, m.height-8))
 }
 
 func (m *Model) selectedIssue() (jira.Issue, bool) {
@@ -222,7 +251,7 @@ func (m *Model) visibleIssues() []indexedIssue {
 	filter := strings.ToLower(strings.TrimSpace(m.filterInput.Value()))
 	out := make([]indexedIssue, 0, len(m.issues))
 	for i, issue := range m.issues {
-		if filter == "" || strings.Contains(strings.ToLower(issue.Key+" "+issue.Summary+" "+issue.Status.Name), filter) {
+		if filter == "" || strings.Contains(strings.ToLower(issue.Key+" "+issue.Summary+" "+issue.Description+" "+issue.Status.Name), filter) {
 			out = append(out, indexedIssue{Index: i, Issue: issue})
 		}
 	}
@@ -242,6 +271,7 @@ func (m *Model) moveSelection(delta int) {
 	visible := m.visibleIssues()
 	if len(visible) == 0 {
 		m.selected = 0
+		m.ticketViewport.Offset = 0
 		return
 	}
 	m.selected += delta
@@ -254,6 +284,63 @@ func (m *Model) moveSelection(delta int) {
 	if m.cfg.UI.Animations {
 		m.selectionPos, m.selectionVel = m.selectionSpring.Update(m.selectionPos, m.selectionVel, float64(m.selected))
 	}
+	m.detailsViewport.Offset = 0
+	m.repairViewports()
+}
+
+func (m *Model) ticketPageSize() int {
+	l := calculateMainLayout(m.width, m.height, 1, m.focus, defaultLayoutOptions())
+	h := max(0, l.Tickets.Height-2)
+	if m.showFilterLine() {
+		h--
+	}
+	return max(0, h)
+}
+
+func (m *Model) detailsPanelMetrics() (int, int) {
+	l := calculateMainLayout(m.width, m.height, 1, m.focus, defaultLayoutOptions())
+	if l.Unusable || l.TicketsOnly {
+		return 1, 0
+	}
+	return max(1, l.Details.Width-4), max(0, l.Details.Height-2)
+}
+
+func (m *Model) detailsPageSize() int {
+	_, pageSize := m.detailsPanelMetrics()
+	return pageSize
+}
+
+func (m *Model) repairViewports() {
+	visible := m.visibleIssues()
+	if len(visible) == 0 {
+		m.selected, m.ticketViewport.Offset = 0, 0
+	} else {
+		m.selected = min(max(0, m.selected), len(visible)-1)
+		m.ticketViewport.Offset = ensureVisible(m.ticketViewport.Offset, m.selected, len(visible), m.ticketPageSize())
+	}
+	detailsWidth, detailsPageSize := m.detailsPanelMetrics()
+	m.detailsViewport.Offset = clampOffset(m.detailsViewport.Offset, len(m.detailsLines(detailsWidth)), detailsPageSize)
+}
+
+func (m *Model) selectedIssueKey() string {
+	if issue, ok := m.selectedIssue(); ok {
+		return issue.Key
+	}
+	return ""
+}
+
+func (m *Model) restoreSelection(key string) {
+	visible := m.visibleIssues()
+	if key != "" {
+		for i, item := range visible {
+			if item.Issue.Key == key {
+				m.selected = i
+				m.repairViewports()
+				return
+			}
+		}
+	}
+	m.repairViewports()
 }
 
 func firstNonEmpty(values ...string) string {
@@ -283,7 +370,7 @@ func cloneFloat(value *float64) *float64 {
 }
 
 func (m *Model) pendingSyncCount() int {
-	return len(m.pendingCreates) + len(m.pendingStatusOriginal) + len(m.pendingPointOriginals)
+	return len(m.pendingCreates) + len(m.pendingStatusOriginal) + len(m.pendingPointOriginals) + len(m.pendingTaskUpdates)
 }
 
 func pointIndex(points *float64) int {

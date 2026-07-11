@@ -87,8 +87,9 @@ func TestTotals(t *testing.T) {
 	got := Totals([]jira.Issue{
 		{Status: jira.Status{Category: jira.StatusCategory{Key: "done"}}, StoryPoints: new(3.0)},
 		{Status: jira.Status{Category: jira.StatusCategory{Key: "indeterminate"}}, StoryPoints: new(5.0)},
+		{Status: jira.Status{Name: "Blocked", Category: jira.StatusCategory{Key: "new"}}, StoryPoints: new(2.0)},
 	})
-	if got.Total != 8 || got.Done != 3 || got.InProgress != 5 {
+	if got.Total != 10 || got.Done != 3 || got.InProgress != 5 || got.Blocked != 2 || got.Todo != 0 {
 		t.Fatalf("unexpected totals: %+v", got)
 	}
 }

@@ -61,6 +61,7 @@ func (m *Model) createTaskCmd() tea.Cmd {
 		return func() tea.Msg { return errMsg{Err: fmt.Errorf("service is not configured")} }
 	}
 	summary := strings.TrimSpace(m.createSummary.Value())
+	description := strings.TrimSpace(m.createDescription.Value())
 	if summary == "" {
 		return func() tea.Msg { return errMsg{Err: fmt.Errorf("summary is required")} }
 	}
@@ -68,11 +69,12 @@ func (m *Model) createTaskCmd() tea.Cmd {
 	m.tempIssueSeq++
 	tempKey := fmt.Sprintf("NEW-%d", m.tempIssueSeq)
 	issue := jira.Issue{
-		ID:        tempKey,
-		Key:       tempKey,
-		Summary:   summary,
-		Status:    optimisticStatus("new"),
-		IssueType: jira.IssueType{ID: m.cfg.Jira.IssueTypeTaskID, Name: "Task"},
+		ID:          tempKey,
+		Key:         tempKey,
+		Summary:     summary,
+		Description: description,
+		Status:      optimisticStatus("new"),
+		IssueType:   jira.IssueType{ID: m.cfg.Jira.IssueTypeTaskID, Name: "Task"},
 		Assignee: &jira.User{
 			AccountID:   m.cfg.Jira.AccountID,
 			DisplayName: firstNonEmpty(m.cfg.Jira.DisplayName, "You"),
@@ -83,11 +85,13 @@ func (m *Model) createTaskCmd() tea.Cmd {
 	m.pendingCreates[tempKey] = issue
 	m.issues = append(m.issues, issue)
 	m.selected = len(m.visibleIssues()) - 1
+	m.repairViewports()
 	m.screen = screenMain
 	m.createSummary.SetValue("")
+	m.createDescription.SetValue("")
 	m.status = tempKey + " queued"
 	m.recalcTotals()
-	input := service.TaskInput{Summary: summary}
+	input := service.TaskInput{Summary: summary, Description: description}
 	createCmd := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
@@ -98,6 +102,46 @@ func (m *Model) createTaskCmd() tea.Cmd {
 		return taskCreatedMsg{TempKey: tempKey, Issue: created}
 	}
 	return tea.Batch(m.saveCacheCmd(), createCmd)
+}
+
+func (m *Model) updateTaskCmd() tea.Cmd {
+	if m.service == nil {
+		return func() tea.Msg { return errMsg{Err: fmt.Errorf("service is not configured")} }
+	}
+	key := m.editingTaskKey
+	originalSummary := m.editingTaskOriginal
+	originalDescription := m.editingTaskDescription
+	summary := strings.TrimSpace(m.createSummary.Value())
+	description := strings.TrimSpace(m.createDescription.Value())
+	if summary == "" {
+		return func() tea.Msg { return errMsg{Err: fmt.Errorf("summary is required")} }
+	}
+	m.pendingTaskUpdates[key] = pendingTaskUpdate{
+		Original: taskContent{Summary: originalSummary, Description: originalDescription},
+		Desired:  taskContent{Summary: summary, Description: description},
+	}
+	m.updateIssueContent(key, summary, description)
+	m.screen = screenMain
+	m.editingTaskKey = ""
+	m.editingTaskOriginal = ""
+	m.editingTaskDescription = ""
+	m.status = key + " queued"
+	return tea.Batch(m.saveCacheCmd(), func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		input := service.TaskInput{Summary: summary, Description: description}
+		if err := m.service.UpdateTask(ctx, key, input); err != nil {
+			return taskUpdateFailedMsg{
+				Key:                 key,
+				Summary:             summary,
+				Description:         description,
+				OriginalSummary:     originalSummary,
+				OriginalDescription: originalDescription,
+				Err:                 err,
+			}
+		}
+		return taskUpdatedMsg{Key: key, Summary: summary, Description: description}
+	})
 }
 
 func (m *Model) quickMoveCmd(target string) tea.Cmd {

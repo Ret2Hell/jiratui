@@ -30,6 +30,7 @@ type DailyDraft struct {
 // TaskInput contains TUI task creation fields.
 type TaskInput struct {
 	Summary     string
+	Description string
 	StoryPoints *float64
 }
 
@@ -37,6 +38,7 @@ type TaskInput struct {
 type Service interface {
 	LoadSprint(context.Context) (SprintData, error)
 	CreateTask(context.Context, TaskInput) (jira.Issue, error)
+	UpdateTask(context.Context, string, TaskInput) error
 	Transitions(context.Context, string) ([]jira.Transition, error)
 	TransitionIssue(context.Context, string, string) error
 	MoveToStatus(context.Context, string, string) (jira.Status, error)
@@ -110,7 +112,7 @@ func (s *JiraService) CreateTask(ctx context.Context, input TaskInput) (jira.Iss
 		IssueTypeID:     s.cfg.Jira.IssueTypeTaskID,
 		AssigneeID:      assignee.AccountID,
 		Summary:         strings.TrimSpace(input.Summary),
-		Description:     "",
+		Description:     strings.TrimSpace(input.Description),
 		StoryPoints:     input.StoryPoints,
 		StoryPointsID:   s.cfg.Jira.StoryPointsFieldID,
 		AdditionalField: s.cfg.Jira.CreateDefaults,
@@ -128,6 +130,14 @@ func (s *JiraService) CreateTask(ctx context.Context, input TaskInput) (jira.Iss
 		return issue, fmt.Errorf("created %s but could not add it to sprint: %w", issue.Key, err)
 	}
 	return issue, nil
+}
+
+// UpdateTask updates an issue's summary and description.
+func (s *JiraService) UpdateTask(ctx context.Context, issueKey string, input TaskInput) error {
+	if strings.TrimSpace(input.Summary) == "" {
+		return fmt.Errorf("summary is required")
+	}
+	return s.jira.UpdateTask(ctx, issueKey, strings.TrimSpace(input.Summary), strings.TrimSpace(input.Description))
 }
 
 // Transitions returns valid issue transitions.
