@@ -37,6 +37,7 @@ type TaskInput struct {
 type Service interface {
 	LoadSprint(context.Context) (SprintData, error)
 	CreateTask(context.Context, TaskInput) (jira.Issue, error)
+	UpdateTaskSummary(context.Context, string, string) error
 	Transitions(context.Context, string) ([]jira.Transition, error)
 	TransitionIssue(context.Context, string, string) error
 	MoveToStatus(context.Context, string, string) (jira.Status, error)
@@ -128,6 +129,14 @@ func (s *JiraService) CreateTask(ctx context.Context, input TaskInput) (jira.Iss
 		return issue, fmt.Errorf("created %s but could not add it to sprint: %w", issue.Key, err)
 	}
 	return issue, nil
+}
+
+// UpdateTaskSummary updates an issue's summary.
+func (s *JiraService) UpdateTaskSummary(ctx context.Context, issueKey, summary string) error {
+	if strings.TrimSpace(summary) == "" {
+		return fmt.Errorf("summary is required")
+	}
+	return s.jira.UpdateSummary(ctx, issueKey, strings.TrimSpace(summary))
 }
 
 // Transitions returns valid issue transitions.

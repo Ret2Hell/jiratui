@@ -285,6 +285,12 @@ func (c *Client) TransitionIssue(ctx context.Context, issueKey, transitionID str
 	return c.do(ctx, http.MethodPost, path, nil, payload, nil)
 }
 
+// UpdateSummary updates an issue's summary.
+func (c *Client) UpdateSummary(ctx context.Context, issueKey, summary string) error {
+	path := fmt.Sprintf("/rest/api/3/issue/%s", url.PathEscape(issueKey))
+	return c.do(ctx, http.MethodPut, path, nil, map[string]any{"fields": map[string]any{"summary": summary}}, nil)
+}
+
 // UpdateStoryPoints sets or clears the story points custom field for an issue.
 func (c *Client) UpdateStoryPoints(ctx context.Context, issueKey, storyPointsFieldID string, points *float64) error {
 	if storyPointsFieldID == "" {
