@@ -340,8 +340,8 @@ func (m *Model) updatePoints(key tea.KeyPressMsg, _ tea.Msg) tea.Cmd {
 		m.movePointSelection(-1)
 	case "down", "right", "j", "l":
 		m.movePointSelection(1)
-	case "1", "2", "3", "4", "5", "6", "7":
-		m.pointSelected = int(key.String()[0] - '1')
+	case "0", "1", "2", "3", "4", "5", "6":
+		m.pointSelected = int(key.String()[0] - '0')
 		m.applyPointSelection()
 	}
 	return nil
