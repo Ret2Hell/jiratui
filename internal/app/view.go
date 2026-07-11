@@ -43,7 +43,7 @@ func (m *Model) View() tea.View {
 
 func (m *Model) renderMain() string {
 	header := m.renderHeader()
-	footerText := "n new · t todo · p progress · d done · enter sp · m mail draft · / filter · r refresh · ? help · q quit"
+	footerText := "n new · e edit · t todo · p progress · d done · enter sp · m mail draft · / filter · r refresh · ? help · q quit"
 	if m.screen == screenPoints {
 		footerText = "←/→ or ↑/↓ change points · 1-7 select · enter save · esc cancel"
 	}
