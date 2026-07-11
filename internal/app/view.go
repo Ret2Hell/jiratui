@@ -94,14 +94,13 @@ func (m *Model) renderHeader() string {
 	width := max(10, m.width)
 	project := firstNonEmpty(m.projectName, m.cfg.Jira.ProjectName, "No project")
 	sprint := firstNonEmpty(m.sprint.Name, "No active sprint")
-	counts := m.statusCounts()
+	points := m.statusPoints()
 	leftParts := []string{
 		m.stat("project", project, m.styles.HeaderMeta),
 		m.stat("sprint", sprint, m.styles.HeaderMeta),
-		m.stat("sp", fmt.Sprintf("%s total", pointValueString(m.totals.Total)), m.styles.StatValue),
-		m.stat("done", fmt.Sprintf("%d", counts.done), m.styles.Done),
-		m.stat("in progress", fmt.Sprintf("%d", counts.inProgress), m.styles.WIP),
-		m.stat("todo", fmt.Sprintf("%d", counts.todo), m.styles.Todo),
+		m.stat("todo", pointValueString(points.todo), m.styles.Todo),
+		m.stat("progress", pointValueString(points.inProgress), m.styles.WIP),
+		m.stat("done", pointValueString(points.done), m.styles.Done),
 	}
 	left := strings.Join(leftParts, m.styles.Muted.Render("  •  "))
 	right := m.renderHeaderStatus()
@@ -460,30 +459,18 @@ func (m *Model) statusIcon(issue jira.Issue) string {
 	}
 }
 
-type statusCounts struct {
-	done       int
-	inProgress int
-	todo       int
+type statusPoints struct {
+	done       float64
+	inProgress float64
+	todo       float64
 }
 
-func (m *Model) statusCounts() statusCounts {
-	var counts statusCounts
-	for _, item := range m.visibleIssues() {
-		status := item.Issue.Status
-		if jira.StatusCategoryForName(status.Name) == "blocked" {
-			counts.inProgress++
-			continue
-		}
-		switch status.Category.Key {
-		case "done":
-			counts.done++
-		case "indeterminate":
-			counts.inProgress++
-		default:
-			counts.todo++
-		}
+func (m *Model) statusPoints() statusPoints {
+	return statusPoints{
+		done:       m.totals.Done,
+		inProgress: m.totals.InProgress + m.totals.Blocked,
+		todo:       m.totals.Todo,
 	}
-	return counts
 }
 
 func (m *Model) styleIssueLine(issue jira.Issue, line string) string {
