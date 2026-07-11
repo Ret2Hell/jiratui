@@ -17,21 +17,28 @@ import (
 func (m *Model) View() tea.View {
 	m.setComponentWidths()
 	var content string
-	switch m.screen {
-	case screenSetup:
-		content = m.renderSetup()
-	case screenCreate:
-		content = m.renderCreateModal()
-	case screenPoints:
-		content = m.renderMain()
-	case screenReport:
-		content = m.renderReport()
-	case screenHelp:
-		content = m.renderHelp()
-	default:
-		content = m.renderMain()
+	if minWidth, minHeight := m.minimumScreenSize(); m.width < minWidth || m.height < minHeight {
+		content = m.renderTooSmall(minWidth, minHeight)
+	} else {
+		switch m.screen {
+		case screenSetup:
+			content = m.renderSetup()
+		case screenCreate:
+			content = m.renderCreateModal()
+		case screenPoints:
+			content = m.renderMain()
+		case screenReport:
+			content = m.renderReport()
+		case screenHelp:
+			content = m.renderHelp()
+		default:
+			content = m.renderMain()
+		}
 	}
 	content = m.zones.Scan(content)
+	if m.width > 0 && m.height > 0 {
+		content = strings.Join(normalizeLines(content, m.width, m.height), "\n")
+	}
 	view := tea.NewView(content)
 	view.AltScreen = true
 	if m.cfg.UI.Mouse {
@@ -41,53 +48,69 @@ func (m *Model) View() tea.View {
 	return view
 }
 
-func (m *Model) renderMain() string {
-	header := m.renderHeader()
-	footerText := "n new · e edit · t todo · p progress · d done · enter sp · m mail draft · / filter · r refresh · ? help · q quit"
-	if m.screen == screenPoints {
-		footerText = "←/→ or ↑/↓ change points · 1-7 select · enter save · esc cancel"
+func (m *Model) minimumScreenSize() (int, int) {
+	switch m.screen {
+	case screenSetup:
+		return 40, 12
+	case screenCreate:
+		return 40, 12
+	case screenReport:
+		return 30, 8
+	case screenHelp:
+		return 30, 10
+	default:
+		return 20, 6
 	}
-	footer := m.renderFooter(footerText)
-	bodyH := max(0, m.height-lipgloss.Height(header)-lipgloss.Height(footer))
-	bodyW := max(40, m.width)
-	body := ""
-	if bodyH >= 4 {
-		if bodyW < 90 {
-			body = m.renderStackedMainBody(bodyW, bodyH)
+}
+
+func (m *Model) renderTooSmall(minWidth, minHeight int) string {
+	if m.width <= 0 || m.height <= 0 {
+		return ""
+	}
+	message := fmt.Sprintf("Terminal too small — resize to at least %d×%d", minWidth, minHeight)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, truncatePlain(message, m.width))
+}
+
+func (m *Model) renderMain() string {
+	layout := calculateMainLayout(m.width, m.height, 1, m.focus, defaultLayoutOptions())
+	if layout.Unusable {
+		message := "Terminal too small — resize to at least 20×5"
+		return strings.Join(normalizeLines(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, truncatePlain(message, m.width)), m.width, m.height), "\n")
+	}
+	m.repairViewports()
+	header := strings.Join(normalizeLines(m.renderHeader(), layout.Header.Width, layout.Header.Height), "\n")
+	footer := strings.Join(normalizeLines(m.renderBindingFooter(), layout.Footer.Width, layout.Footer.Height), "\n")
+	tickets := m.renderTicketsPanel(layout.Tickets)
+	body := tickets
+	if !layout.TicketsOnly {
+		details := m.renderDetailsPanel(layout.Details)
+		if layout.Stacked {
+			body = lipgloss.JoinVertical(lipgloss.Left, tickets, details)
 		} else {
-			body = m.renderWideMainBody(bodyW, bodyH)
+			body = joinFixedHorizontal(tickets, details, layout.Tickets.Width, layout.Details.Width, layout.Tickets.Height)
 		}
 	}
-	if body == "" {
-		return strings.Join(normalizeLines(lipgloss.JoinVertical(lipgloss.Left, header, footer), m.width, m.height), "\n")
-	}
-	body = strings.Join(normalizeLines(body, bodyW, bodyH), "\n")
 	return strings.Join(normalizeLines(lipgloss.JoinVertical(lipgloss.Left, header, body, footer), m.width, m.height), "\n")
 }
 
-func (m *Model) renderWideMainBody(width int, height int) string {
-	leftW := (width * 2) / 3
-	rightW := width - leftW
-	left := m.renderPanel("Tickets", m.renderTickets(max(20, leftW-4), max(1, height-2)), leftW, height, m.focus == focusTickets)
-	right := m.renderPanel("Details", m.renderDetails(max(20, rightW-4), max(1, height-2)), rightW, height, m.focus == focusDetails)
-	return joinFixedHorizontal(left, right, leftW, rightW, height)
+func (m *Model) renderTicketsPanel(r rect) string {
+	visible := m.visibleIssues()
+	page := max(0, r.Height-2)
+	if m.showFilterLine() {
+		page--
+	}
+	var position *listPosition
+	if len(visible) > 0 {
+		position = &listPosition{Current: m.selected, Total: len(visible)}
+	}
+	return m.renderPanelSpec(panelSpec{Title: "Tickets", Active: m.focus == focusTickets, Content: m.renderTickets(max(0, r.Width-4), max(0, r.Height-2)), Width: r.Width, Height: r.Height, Position: position, Scrollbar: &scrollbarState{ContentSize: len(visible), PageSize: max(0, page), Offset: m.ticketViewport.Offset}})
 }
 
-func (m *Model) renderStackedMainBody(width int, height int) string {
-	if height < 8 {
-		return m.renderPanel("Tickets", m.renderTickets(max(20, width-4), max(1, height-2)), width, height, m.focus == focusTickets)
-	}
-	topH := max(4, (height*2)/3)
-	bottomH := height - topH
-	if bottomH < 4 {
-		bottomH = 4
-		topH = max(4, height-bottomH)
-	}
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		m.renderPanel("Tickets", m.renderTickets(max(20, width-4), max(1, topH-2)), width, topH, m.focus == focusTickets),
-		m.renderPanel("Details", m.renderDetails(max(20, width-4), max(1, bottomH-2)), width, bottomH, m.focus == focusDetails),
-	)
+func (m *Model) renderDetailsPanel(r rect) string {
+	lines := m.detailsLines(max(1, r.Width-4))
+	page := max(0, r.Height-2)
+	start, end := visibleRange(m.detailsViewport.Offset, len(lines), page)
+	return m.renderPanelSpec(panelSpec{Title: "Details", Active: m.focus == focusDetails, Content: strings.Join(lines[start:end], "\n"), Width: r.Width, Height: r.Height, Scrollbar: &scrollbarState{ContentSize: len(lines), PageSize: page, Offset: m.detailsViewport.Offset}})
 }
 
 func (m *Model) renderHeader() string {
@@ -133,43 +156,8 @@ func (m *Model) stat(label string, value string, valueStyle lipgloss.Style) stri
 	return m.styles.StatLabel.Render(label+" ") + valueStyle.Render(value)
 }
 
-func (m *Model) renderFooter(help string) string {
-	width := max(1, m.width)
-	line := " " + help
-	line = truncatePlain(line, width)
-	line = padRight(line, width)
-	return m.styles.Footer.Render(line)
-}
-
 func (m *Model) renderPanel(title string, content string, width int, outerHeight int, active bool) string {
-	width = max(8, width)
-	outerHeight = max(4, outerHeight)
-	contentW := max(1, width-4)
-	innerH := max(1, outerHeight-2)
-	lines := slices.Insert(slices.Collect(strings.SplitSeq(content, "\n")), 0, m.styles.Subtitle.Render(title))
-	if len(lines) > innerH {
-		lines = lines[:innerH]
-	}
-	for i := range lines {
-		lines[i] = truncatePlain(lines[i], contentW)
-	}
-	for len(lines) < innerH {
-		lines = append(lines, "")
-	}
-
-	borderColor := lipgloss.Color("#334155")
-	if active {
-		borderColor = lipgloss.Color("#A78BFA")
-	}
-	border := lipgloss.NewStyle().Foreground(borderColor).Render
-	out := make([]string, 0, outerHeight)
-	out = append(out, border("╭"+strings.Repeat("─", width-2)+"╮"))
-	for _, line := range lines {
-		row := border("│") + " " + padRight(line, contentW) + " " + border("│")
-		out = append(out, truncatePlain(row, width))
-	}
-	out = append(out, border("╰"+strings.Repeat("─", width-2)+"╯"))
-	return strings.Join(normalizeLines(strings.Join(out, "\n"), width, outerHeight), "\n")
+	return m.renderPanelSpec(panelSpec{Title: title, Content: content, Width: width, Height: outerHeight, Active: active})
 }
 
 func (m *Model) renderTickets(width int, height int) string {
@@ -179,20 +167,17 @@ func (m *Model) renderTickets(width int, height int) string {
 			return m.loadingTicketsView(width, height)
 		}
 		if m.filterInput.Value() != "" {
-			return "No tickets match filter.\n\n" + m.filterLine()
+			return m.emptyTicketsView("No tickets match filter.", width, height)
 		}
-		return "No assigned tickets in active sprint.\nPress n to create a task.\n\n" + m.filterLine()
+		return m.emptyTicketsView("No assigned tickets in active sprint.\nPress n to create a task.", width, height)
 	}
-	rowsH := max(1, height)
+	rowsH := max(0, height)
 	showFilter := m.showFilterLine()
 	if showFilter {
-		rowsH = max(1, height-2)
+		rowsH = max(0, height-1)
 	}
-	start := 0
-	if m.selected >= rowsH {
-		start = m.selected - rowsH + 1
-	}
-	end := min(len(visible), start+rowsH)
+	m.ticketViewport.Offset = ensureVisible(m.ticketViewport.Offset, m.selected, len(visible), rowsH)
+	start, end := visibleRange(m.ticketViewport.Offset, len(visible), rowsH)
 	lines := make([]string, 0, rowsH+2)
 	for row := start; row < end; row++ {
 		item := visible[row]
@@ -229,19 +214,32 @@ func (m *Model) renderTickets(width int, height int) string {
 
 func (m *Model) loadingTicketsView(width int, height int) string {
 	message := m.spinner.View() + " " + m.styles.Subtitle.Render("Loading active sprint tickets…")
-	if height <= 2 || !m.showFilterLine() {
-		return lipgloss.Place(max(1, width), max(1, height), lipgloss.Center, lipgloss.Center, truncatePlain(message, width), lipgloss.WithWhitespaceChars(" "))
-	}
-	return lipgloss.Place(max(1, width), max(1, height-1), lipgloss.Center, lipgloss.Center, message, lipgloss.WithWhitespaceChars(" ")) + "\n" + m.filterLine()
+	return m.emptyTicketsView(message, width, height)
 }
 
-func (m *Model) renderDetails(width int, height int) string {
+func (m *Model) emptyTicketsView(message string, width int, height int) string {
+	width, height = max(0, width), max(0, height)
+	if height == 0 {
+		return ""
+	}
+	contentHeight := height
+	if m.showFilterLine() {
+		contentHeight--
+	}
+	lines := normalizeLines(message, width, max(0, contentHeight))
+	if m.showFilterLine() {
+		lines = append(lines, truncatePlain(m.filterLine(), width))
+	}
+	return strings.Join(normalizeLines(strings.Join(lines, "\n"), width, height), "\n")
+}
+
+func (m *Model) detailsLines(width int) []string {
 	issue, ok := m.selectedIssue()
 	if !ok {
 		if m.loading && len(m.issues) == 0 {
-			return "Loading sprint details…"
+			return []string{"Loading sprint details…"}
 		}
-		return "Select a ticket to see details."
+		return []string{"Select a ticket to see details."}
 	}
 	points := pointsString(issue.StoryPoints)
 	if m.screen == screenPoints {
@@ -260,18 +258,14 @@ func (m *Model) renderDetails(width int, height int) string {
 		meta = append(meta, fmt.Sprintf("Assignee: %s", issue.Assignee.DisplayName))
 	}
 	summaryLines := wrapWords(issue.Summary, width)
-	maxSummaryLines := max(1, height-1-len(meta))
-	if len(summaryLines) > maxSummaryLines {
-		summaryLines = summaryLines[:maxSummaryLines]
-	}
 	lines := []string{m.styles.Title.Render(issue.Key)}
 	lines = append(lines, summaryLines...)
 	lines = append(lines, meta...)
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 func (m *Model) renderSetup() string {
-	footer := m.renderFooter(m.setupFooterHelp())
+	footer := m.renderBindingFooter()
 	bodyHeight := max(1, m.height-lipgloss.Height(footer))
 	var lines []string
 	lines = append(lines, m.styles.Title.Render(fmt.Sprintf("jiratui setup · step %d/2", m.setupStage+1)))
@@ -283,7 +277,7 @@ func (m *Model) renderSetup() string {
 	if m.loading {
 		lines = append(lines, m.spinner.View()+" "+m.styles.Subtitle.Render(m.status))
 	} else if m.err != nil {
-		for _, line := range wrapWords(m.err.Error(), max(40, m.width-4)) {
+		for _, line := range wrapWords(m.err.Error(), max(1, m.width-4)) {
 			lines = append(lines, m.styles.Error.Render(line))
 		}
 	} else if m.status != "" {
@@ -299,28 +293,21 @@ func (m *Model) renderSetup() string {
 		lines = append(lines, fmt.Sprintf("%s%s", prefix, m.styles.InputLabel.Render(label)))
 		lines = append(lines, "  "+m.setupInputs[i].View())
 	}
-	body := lipgloss.Place(max(60, m.width), bodyHeight, lipgloss.Left, lipgloss.Top, strings.Join(lines, "\n"), lipgloss.WithWhitespaceChars(" "))
+	body := lipgloss.Place(max(1, m.width), bodyHeight, lipgloss.Left, lipgloss.Top, strings.Join(lines, "\n"), lipgloss.WithWhitespaceChars(" "))
 	return lipgloss.JoinVertical(lipgloss.Left, body, footer)
-}
-
-func (m *Model) setupFooterHelp() string {
-	if m.setupStage == 0 {
-		return "tab next · shift+tab previous · enter continue · q quit"
-	}
-	return "tab next · shift+tab previous · enter save · q quit"
 }
 
 func (m *Model) renderCreateModal() string {
 	background := m.renderMain()
 	w := createModalWidth(m.width)
 	body := m.renderCreate(max(1, w-8))
-	title, description, action := "New task", "Create a Jira task assigned to you.", "enter create"
+	title, description := "New task", "Create a Jira task assigned to you."
 	if m.editingTaskKey != "" {
-		title, description, action = "Edit task", "Update "+m.editingTaskKey+".", "enter save"
+		title, description = "Edit task", "Update "+m.editingTaskKey+"."
 	}
 	header := m.styles.Title.Render(title)
 	subtitle := m.styles.Muted.Render(description)
-	actions := lipgloss.NewStyle().Foreground(lipgloss.Color("#CBD5E1")).Background(lipgloss.Color("#1E293B")).Padding(0, 1).Render(action) + " " + m.styles.Muted.Render("esc cancel")
+	actions := m.styles.Footer.Render(strings.TrimSpace(m.bindingFooterLine(max(1, w-8))))
 	if m.loading {
 		message := firstNonEmpty(m.status, "Creating task")
 		actions = m.spinner.View() + " " + m.styles.Success.Render(message)
@@ -383,42 +370,31 @@ func (m *Model) renderCreateLabel(index int, label string, hint string, count in
 }
 
 func (m *Model) renderReport() string {
-	title := m.styles.Title.Render("Daily Report") + m.styles.Subtitle.Render(" · "+m.reportDraft.Subject)
-	body := m.renderPanel("Edit before saving", m.reportEditor.View(), max(40, m.width), max(10, m.height-2), true)
-	footer := m.renderFooter("ctrl+s save to IONOS draft · esc cancel")
+	title := truncatePlain(m.styles.Title.Render("Daily Report")+m.styles.Subtitle.Render(" · "+m.reportDraft.Subject), m.width)
+	footer := m.renderBindingFooter()
+	bodyHeight := max(4, m.height-lipgloss.Height(title)-lipgloss.Height(footer))
+	body := m.renderPanel("Edit before saving", m.reportEditor.View(), m.width, bodyHeight, true)
 	return lipgloss.JoinVertical(lipgloss.Left, title, body, footer)
 }
 
 func (m *Model) renderHelp() string {
-	content := strings.Join([]string{
-		m.styles.Title.Render("jiratui help"),
-		"",
-		"Daily workflow:",
-		"  n       new task",
-		"  e / R   edit selected task",
-		"  enter   points: set story points",
-		"  p       progress: quick move to In Progress",
-		"  i       progress: quick move to In Progress",
-		"  d       done: quick move to Done",
-		"  m       mail: generate daily report draft",
-		"  /       filter visible sprint tickets",
-		"  r       refresh active sprint tickets",
-		"",
-		"This app intentionally omits comments, attachments, links, worklogs, and broad Jira search.",
-		"",
-		"Press esc, ?, or q to close help.",
-	}, "\n")
-	return m.renderModal("Help", content, "esc close")
+	content := m.styles.Title.Render("jiratui help") + "\n\nDaily workflow:\n" + m.helpContent() + "\n\nNavigation: arrows or j/k, pgup/pgdown, home/end (g/G), tab changes focus.\n\nThis app intentionally omits comments, attachments, links, worklogs, and broad Jira search."
+	return m.renderModal("Help", content, strings.TrimSpace(m.bindingFooterLine(20)))
 }
 
 func (m *Model) renderModal(title string, body string, footer string) string {
-	w := min(max(50, m.width-10), 90)
-	h := min(max(10, lipgloss.Height(body)+4), max(10, m.height-4))
-	panel := m.renderPanel(title, body, w, h, true)
+	w := min(max(20, m.width-4), 90)
+	footerHeight := 0
 	if footer != "" {
-		panel = lipgloss.JoinVertical(lipgloss.Left, panel, m.styles.Footer.Width(max(0, w-2)).Render(footer))
+		footerHeight = 1
 	}
-	return lipgloss.Place(max(w, m.width), max(h, m.height), lipgloss.Center, lipgloss.Center, panel, lipgloss.WithWhitespaceChars(" "))
+	panelHeight := min(max(6, lipgloss.Height(body)+2), max(6, m.height-footerHeight-2))
+	panel := m.renderPanel(title, body, w, panelHeight, true)
+	if footer != "" {
+		line := m.styles.Footer.Render(padRight(truncatePlain(footer, w), w))
+		panel = lipgloss.JoinVertical(lipgloss.Left, panel, line)
+	}
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel, lipgloss.WithWhitespaceChars(" "))
 }
 
 func (m *Model) showFilterLine() bool {
@@ -492,7 +468,8 @@ func (m *Model) styleStatus(status jira.Status) lipgloss.Style {
 }
 
 func createModalWidth(screenWidth int) int {
-	return min(max(56, screenWidth/2), 78)
+	preferred := min(max(56, screenWidth/2), 78)
+	return max(20, min(preferred, max(20, screenWidth-4)))
 }
 
 func addDropShadow(value string) string {

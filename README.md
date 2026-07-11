@@ -76,6 +76,11 @@ jiratui --setup
 | `?` | help |
 | `r` | refresh tickets |
 | `/` | filter tickets |
+| `tab` | switch panel focus |
+| `↑` / `↓`, `j` / `k` | move selection or scroll focused panel |
+| `pgup` / `pgdown` | move one page |
+| `home` / `end`, `g` / `G` | jump to the beginning or end |
+| Mouse wheel | scroll the panel under the pointer |
 | `n` | create task |
 | `e` / `R` | edit selected task |
 | `enter` | set story points |

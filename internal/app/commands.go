@@ -83,6 +83,7 @@ func (m *Model) createTaskCmd() tea.Cmd {
 	m.pendingCreates[tempKey] = issue
 	m.issues = append(m.issues, issue)
 	m.selected = len(m.visibleIssues()) - 1
+	m.repairViewports()
 	m.screen = screenMain
 	m.createSummary.SetValue("")
 	m.status = tempKey + " queued"

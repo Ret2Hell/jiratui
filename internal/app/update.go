@@ -24,12 +24,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.setComponentWidths()
+		m.repairViewports()
 	case cacheLoadedMsg:
 		if msg.Err != nil {
 			m.status = msg.Err.Error()
 			break
 		}
 		if msg.OK && len(m.issues) == 0 {
+			selectedKey := m.selectedIssueKey()
 			m.projectName = msg.State.ProjectName
 			m.sprint = msg.State.Sprint
 			m.issues = msg.State.Issues
@@ -40,16 +42,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = false
 			m.status = fmt.Sprintf("Loaded %d cached tickets", len(m.issues))
 			m.recalcTotals()
+			m.restoreSelection(selectedKey)
 		}
 	case cacheSavedMsg:
 	case sprintLoadedMsg:
+		selectedKey := m.selectedIssueKey()
 		m.loading = false
 		m.syncingSprint = false
 		m.err = nil
 		m.projectName = msg.Data.ProjectName
 		m.sprint = msg.Data.Sprint
 		m.mergeSprintData(msg.Data.Issues)
-		m.selected = min(m.selected, max(0, len(m.visibleIssues())-1))
+		m.restoreSelection(selectedKey)
 		m.status = fmt.Sprintf("Synced %d tickets", len(m.issues))
 		m.recalcTotals()
 		m.refreshLocalDraft()
@@ -180,7 +184,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenReport:
 			cmds = append(cmds, m.updateReport(key, msg))
 		case screenHelp:
-			if key.Keystroke() == "esc" || key.String() == "q" || key.String() == "?" {
+			if binding, ok := bindingForKey(m.activeBindings(), key.Keystroke()); ok && binding.Command == cmdCancel {
 				m.screen = screenMain
 			}
 		}
@@ -192,6 +196,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if mouse, ok := msg.(tea.MouseClickMsg); ok && m.screen == screenMain {
 		m.updateMouse(mouse)
+	}
+	if wheel, ok := msg.(tea.MouseWheelMsg); ok && m.screen == screenMain {
+		m.updateMouseWheel(wheel)
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -205,6 +212,8 @@ func (m *Model) updatePaste(msg tea.Msg) tea.Cmd {
 		if m.filtering {
 			m.filterInput, cmd = m.filterInput.Update(msg)
 			m.selected = 0
+			m.ticketViewport.Offset = 0
+			m.detailsViewport.Offset = 0
 			m.recalcTotals()
 			m.refreshLocalDraft()
 		}
@@ -219,31 +228,32 @@ func (m *Model) updatePaste(msg tea.Msg) tea.Cmd {
 }
 
 func (m *Model) updateSetup(key tea.KeyPressMsg) tea.Cmd {
-	switch key.Keystroke() {
-	case "tab":
-		m.focusSetup(m.setupFocus + 1)
-		return nil
-	case "enter":
-		if m.setupStage == 0 {
+	binding, ok := bindingForKey(m.activeBindings(), key.Keystroke())
+	if ok {
+		switch binding.Command {
+		case cmdFocus:
+			if key.Keystroke() == "tab" {
+				m.focusSetup(m.setupFocus + 1)
+				return nil
+			}
+			if m.setupFocus == m.setupStageStart() && m.setupStage > 0 {
+				m.setupStage--
+				m.focusSetup(m.setupStageEnd() - 1)
+				return nil
+			}
+			m.focusSetup(m.setupFocus - 1)
+			return nil
+		case cmdSave:
 			m.loading = true
 			m.err = nil
 			m.status = "Discovering Jira setup"
-			return m.saveJiraSetupCmd()
+			if m.setupStage == 0 {
+				return m.saveJiraSetupCmd()
+			}
+			return m.saveSetupCmd()
+		case cmdQuit:
+			return tea.Quit
 		}
-		m.loading = true
-		m.err = nil
-		m.status = "Discovering Jira setup"
-		return m.saveSetupCmd()
-	case "shift+tab":
-		if m.setupFocus == m.setupStageStart() && m.setupStage > 0 {
-			m.setupStage--
-			m.focusSetup(m.setupStageEnd() - 1)
-			return nil
-		}
-		m.focusSetup(m.setupFocus - 1)
-		return nil
-	case "q":
-		return tea.Quit
 	}
 	var cmd tea.Cmd
 	m.setupInputs[m.setupFocus], cmd = m.setupInputs[m.setupFocus].Update(key)
@@ -251,19 +261,14 @@ func (m *Model) updateSetup(key tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
-	if key.String() == "M" {
-		return m.openReportCmd()
-	}
-	if key.String() == "?" {
-		m.screen = screenHelp
-		return nil
-	}
 	if m.filtering {
 		switch key.Keystroke() {
 		case "esc":
 			m.filtering = false
 			m.filterInput.SetValue("")
 			m.filterInput.Blur()
+			m.selected, m.ticketViewport.Offset = 0, 0
+			m.detailsViewport.Offset = 0
 			m.recalcTotals()
 			m.refreshLocalDraft()
 			return nil
@@ -274,68 +279,88 @@ func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
 		}
 		var cmd tea.Cmd
 		m.filterInput, cmd = m.filterInput.Update(key)
-		m.selected = 0
+		m.selected, m.ticketViewport.Offset = 0, 0
+		m.detailsViewport.Offset = 0
 		m.recalcTotals()
 		m.refreshLocalDraft()
 		return cmd
 	}
 
-	switch key.Keystroke() {
-	case "q":
+	b, ok := bindingForKey(m.activeBindings(), key.Keystroke())
+	if !ok {
+		return nil
+	}
+	switch b.Command {
+	case cmdQuit:
 		return tea.Quit
-	case "?":
+	case cmdHelp:
 		m.screen = screenHelp
-	case "r":
+	case cmdRefresh:
 		m.syncingSprint = true
 		m.loading = len(m.issues) == 0
 		return m.loadSprintCmd()
-	case "up", "k":
-		m.moveSelection(-1)
-	case "down", "j":
-		m.moveSelection(1)
-	case "tab":
-		if m.focus == focusTickets {
-			m.focus = focusDetails
-		} else {
-			m.focus = focusTickets
+	case cmdFocus:
+		layout := calculateMainLayout(m.width, m.height, 1, m.focus, defaultLayoutOptions())
+		if !layout.TicketsOnly {
+			if m.focus == focusTickets {
+				m.focus = focusDetails
+			} else {
+				m.focus = focusTickets
+			}
+			m.repairViewports()
 		}
-	case "/":
+	case cmdFilter:
 		m.filtering = true
 		m.filterInput.Focus()
-	case "n":
+	case cmdNew:
 		m.openCreate()
-	case "e", "shift+r":
+	case cmdEdit:
 		m.openEdit()
-	case "enter":
+	case cmdPoints:
 		m.openPoints()
-	case "i", "p":
-		return m.quickMoveCmd("indeterminate")
-	case "t":
+	case cmdTodo:
 		return m.quickMoveCmd("new")
-	case "d", "x":
+	case cmdProgress:
+		return m.quickMoveCmd("indeterminate")
+	case cmdDone:
 		return m.quickMoveCmd("done")
-	case "m":
+	case cmdReport:
 		return m.openReportCmd()
+	case cmdUp:
+		m.navigateFocused(-1, false)
+	case cmdDown:
+		m.navigateFocused(1, false)
+	case cmdPageUp:
+		m.navigateFocused(-1, true)
+	case cmdPageDown:
+		m.navigateFocused(1, true)
+	case cmdHome:
+		m.navigateBoundary(false)
+	case cmdEnd:
+		m.navigateBoundary(true)
 	}
 	return nil
 }
 
 func (m *Model) updateCreate(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
-	switch key.Keystroke() {
-	case "esc":
-		m.screen = screenMain
-		return nil
-	case "enter":
-		if m.editingTaskKey != "" {
-			return m.updateTaskCmd()
+	if binding, ok := bindingForKey(m.activeBindings(), key.Keystroke()); ok {
+		switch binding.Command {
+		case cmdCancel:
+			m.screen = screenMain
+			return nil
+		case cmdSave:
+			if m.editingTaskKey != "" {
+				return m.updateTaskCmd()
+			}
+			return m.createTaskCmd()
+		case cmdFocus:
+			if key.Keystroke() == "tab" {
+				m.focusCreate(m.createFocus + 1)
+			} else {
+				m.focusCreate(m.createFocus - 1)
+			}
+			return nil
 		}
-		return m.createTaskCmd()
-	case "tab":
-		m.focusCreate(m.createFocus + 1)
-		return nil
-	case "shift+tab":
-		m.focusCreate(m.createFocus - 1)
-		return nil
 	}
 	var cmd tea.Cmd
 	m.createSummary, cmd = m.createSummary.Update(msg)
@@ -343,33 +368,41 @@ func (m *Model) updateCreate(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
 }
 
 func (m *Model) updatePoints(key tea.KeyPressMsg, _ tea.Msg) tea.Cmd {
-	switch key.Keystroke() {
-	case "esc":
+	binding, ok := bindingForKey(m.activeBindings(), key.Keystroke())
+	if !ok {
+		return nil
+	}
+	switch binding.Command {
+	case cmdCancel:
 		m.cancelPointEdit()
 		m.screen = screenMain
-		return nil
-	case "enter":
+	case cmdSave:
 		return m.updatePointsCmd()
-	case "up", "left", "k", "h":
-		m.movePointSelection(-1)
-	case "down", "right", "j", "l":
-		m.movePointSelection(1)
-	case "0", "1", "2", "3", "4", "5", "6":
-		m.pointSelected = int(key.String()[0] - '0')
+	case cmdChange:
+		switch key.Keystroke() {
+		case "up", "left", "k", "h":
+			m.movePointSelection(-1)
+		default:
+			m.movePointSelection(1)
+		}
+	case cmdSelect:
+		m.pointSelected = int(key.Keystroke()[0] - '0')
 		m.applyPointSelection()
 	}
 	return nil
 }
 
 func (m *Model) updateReport(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
-	switch key.Keystroke() {
-	case "esc":
-		m.screen = screenMain
-		return nil
-	case "ctrl+s":
-		m.reportDraft.Body = m.reportEditor.Value()
-		m.loading = true
-		return tea.Batch(m.saveCacheCmd(), m.saveDraftCmd())
+	if binding, ok := bindingForKey(m.activeBindings(), key.Keystroke()); ok {
+		switch binding.Command {
+		case cmdCancel:
+			m.screen = screenMain
+			return nil
+		case cmdSave:
+			m.reportDraft.Body = m.reportEditor.Value()
+			m.loading = true
+			return tea.Batch(m.saveCacheCmd(), m.saveDraftCmd())
+		}
 	}
 	var cmd tea.Cmd
 	m.reportEditor, cmd = m.reportEditor.Update(msg)
@@ -377,13 +410,94 @@ func (m *Model) updateReport(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
 }
 
 func (m *Model) updateMouse(msg tea.MouseClickMsg) {
+	if msg.Button != tea.MouseLeft {
+		return
+	}
+	layout := calculateMainLayout(m.width, m.height, 1, m.focus, defaultLayoutOptions())
+	if layout.Tickets.contains(msg.X, msg.Y) {
+		m.focus = focusTickets
+	}
+	if !layout.TicketsOnly && layout.Details.contains(msg.X, msg.Y) {
+		m.focus = focusDetails
+	}
 	visible := m.visibleIssues()
-	for row, item := range visible {
+	for _, item := range visible {
 		z := m.zones.Get(fmt.Sprintf("%sticket-%d", m.prefix, item.Index))
 		if z != nil && z.InBounds(msg) {
-			m.selected = row
+			m.selectIssueBySourceIndex(item.Index)
 			return
 		}
+	}
+	m.repairViewports()
+}
+
+func (m *Model) selectIssueBySourceIndex(sourceIndex int) {
+	visible := m.visibleIssues()
+	row := slices.IndexFunc(visible, func(item indexedIssue) bool { return item.Index == sourceIndex })
+	if row < 0 {
+		return
+	}
+	m.selected = row
+	m.detailsViewport.Offset = 0
+	m.repairViewports()
+}
+
+func (m *Model) updateMouseWheel(msg tea.MouseWheelMsg) {
+	layout := calculateMainLayout(m.width, m.height, 1, m.focus, defaultLayoutOptions())
+	delta := 0
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		delta = -3
+	case tea.MouseWheelDown:
+		delta = 3
+	default:
+		return
+	}
+	if layout.Tickets.contains(msg.X, msg.Y) {
+		m.focus = focusTickets
+		m.moveSelection(delta)
+	} else if !layout.TicketsOnly && layout.Details.contains(msg.X, msg.Y) {
+		m.focus = focusDetails
+		lines := m.detailsLines(max(1, layout.Details.Width-4))
+		m.detailsViewport.Offset = clampOffset(m.detailsViewport.Offset+delta, len(lines), max(0, layout.Details.Height-2))
+	}
+}
+
+func (m *Model) navigateFocused(delta int, page bool) {
+	if m.focus == focusTickets {
+		if page {
+			m.selected = pageSelection(m.selected, delta, len(m.visibleIssues()), m.ticketPageSize())
+			m.repairViewports()
+		} else {
+			m.moveSelection(delta)
+		}
+		m.detailsViewport.Offset = 0
+		return
+	}
+	step := delta
+	if page {
+		step *= max(1, m.detailsPageSize())
+	}
+	detailsWidth, detailsPageSize := m.detailsPanelMetrics()
+	m.detailsViewport.Offset = clampOffset(m.detailsViewport.Offset+step, len(m.detailsLines(detailsWidth)), detailsPageSize)
+}
+
+func (m *Model) navigateBoundary(last bool) {
+	if m.focus == focusTickets {
+		if last {
+			m.selected = max(0, len(m.visibleIssues())-1)
+		} else {
+			m.selected = 0
+		}
+		m.detailsViewport.Offset = 0
+		m.repairViewports()
+		return
+	}
+	if last {
+		detailsWidth, detailsPageSize := m.detailsPanelMetrics()
+		m.detailsViewport.Offset = clampOffset(1<<30, len(m.detailsLines(detailsWidth)), detailsPageSize)
+	} else {
+		m.detailsViewport.Offset = 0
 	}
 }
 
@@ -526,6 +640,7 @@ func (m *Model) removeIssue(key string) {
 	if m.selected >= len(m.visibleIssues()) {
 		m.selected = max(0, len(m.visibleIssues())-1)
 	}
+	m.repairViewports()
 }
 
 func (m *Model) startStatusSync(key string, original jira.Status, next jira.Status) {

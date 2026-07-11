@@ -66,12 +66,14 @@ type Model struct {
 	status              string
 	err                 error
 
-	projectName  string
-	sprint       jira.Sprint
-	issues       []jira.Issue
-	selected     int
-	tempIssueSeq int
-	totals       report.PointTotals
+	projectName     string
+	sprint          jira.Sprint
+	issues          []jira.Issue
+	selected        int
+	ticketViewport  listViewport
+	detailsViewport listViewport
+	tempIssueSeq    int
+	totals          report.PointTotals
 
 	filtering   bool
 	filterInput textinput.Model
@@ -193,17 +195,17 @@ func (m *Model) initInputs() {
 }
 
 func (m *Model) setComponentWidths() {
-	contentWidth := max(40, m.width-4)
+	contentWidth := max(1, m.width-4)
 	setupWidth := max(12, min(70, contentWidth-24))
 	for i := range m.setupInputs {
 		m.setupInputs[i].SetWidth(setupWidth)
 	}
-	m.filterInput.SetWidth(max(10, contentWidth-4))
-	createWidth := createModalWidth(m.width)
-	createInputWidth := max(20, createWidth-10)
+	m.filterInput.SetWidth(max(1, contentWidth-4))
+	createWidth := min(max(1, m.width), createModalWidth(m.width))
+	createInputWidth := max(1, createWidth-10)
 	m.createSummary.SetWidth(createInputWidth)
-	m.reportEditor.SetWidth(max(20, contentWidth-8))
-	m.reportEditor.SetHeight(max(8, m.height-8))
+	m.reportEditor.SetWidth(max(1, contentWidth-8))
+	m.reportEditor.SetHeight(max(1, m.height-8))
 }
 
 func (m *Model) selectedIssue() (jira.Issue, bool) {
@@ -244,6 +246,7 @@ func (m *Model) moveSelection(delta int) {
 	visible := m.visibleIssues()
 	if len(visible) == 0 {
 		m.selected = 0
+		m.ticketViewport.Offset = 0
 		return
 	}
 	m.selected += delta
@@ -256,6 +259,63 @@ func (m *Model) moveSelection(delta int) {
 	if m.cfg.UI.Animations {
 		m.selectionPos, m.selectionVel = m.selectionSpring.Update(m.selectionPos, m.selectionVel, float64(m.selected))
 	}
+	m.detailsViewport.Offset = 0
+	m.repairViewports()
+}
+
+func (m *Model) ticketPageSize() int {
+	l := calculateMainLayout(m.width, m.height, 1, m.focus, defaultLayoutOptions())
+	h := max(0, l.Tickets.Height-2)
+	if m.showFilterLine() {
+		h--
+	}
+	return max(0, h)
+}
+
+func (m *Model) detailsPanelMetrics() (int, int) {
+	l := calculateMainLayout(m.width, m.height, 1, m.focus, defaultLayoutOptions())
+	if l.Unusable || l.TicketsOnly {
+		return 1, 0
+	}
+	return max(1, l.Details.Width-4), max(0, l.Details.Height-2)
+}
+
+func (m *Model) detailsPageSize() int {
+	_, pageSize := m.detailsPanelMetrics()
+	return pageSize
+}
+
+func (m *Model) repairViewports() {
+	visible := m.visibleIssues()
+	if len(visible) == 0 {
+		m.selected, m.ticketViewport.Offset = 0, 0
+	} else {
+		m.selected = min(max(0, m.selected), len(visible)-1)
+		m.ticketViewport.Offset = ensureVisible(m.ticketViewport.Offset, m.selected, len(visible), m.ticketPageSize())
+	}
+	detailsWidth, detailsPageSize := m.detailsPanelMetrics()
+	m.detailsViewport.Offset = clampOffset(m.detailsViewport.Offset, len(m.detailsLines(detailsWidth)), detailsPageSize)
+}
+
+func (m *Model) selectedIssueKey() string {
+	if issue, ok := m.selectedIssue(); ok {
+		return issue.Key
+	}
+	return ""
+}
+
+func (m *Model) restoreSelection(key string) {
+	visible := m.visibleIssues()
+	if key != "" {
+		for i, item := range visible {
+			if item.Issue.Key == key {
+				m.selected = i
+				m.repairViewports()
+				return
+			}
+		}
+	}
+	m.repairViewports()
 }
 
 func firstNonEmpty(values ...string) string {
