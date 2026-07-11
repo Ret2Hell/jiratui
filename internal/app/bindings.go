@@ -47,12 +47,12 @@ type bindingGroup struct {
 
 func mainBindings() []binding {
 	return []binding{
-		{cmdNew, []string{"n"}, "create a new task", "New task", true, 8},
-		{cmdEdit, []string{"e", "shift+r"}, "edit the selected task", "Edit", true, 8},
+		{cmdNew, []string{"n"}, "create a new task", "Create", true, 8},
+		{cmdEdit, []string{"e", "shift+r"}, "edit the selected task", "Edit", false, 8},
 		{cmdPoints, []string{"enter"}, "set story points", "Story points", true, 8},
 		{cmdTodo, []string{"t"}, "move to To Do", "To Do", false, 6},
-		{cmdProgress, []string{"p", "i"}, "move to In Progress", "In Progress", false, 6},
-		{cmdDone, []string{"d", "x"}, "move to Done", "Done", false, 6},
+		{cmdProgress, []string{"p", "i"}, "move to In Progress", "In Progress", true, 6},
+		{cmdDone, []string{"d", "x"}, "move to Done", "Done", true, 6},
 		{cmdReport, []string{"m", "shift+m"}, "open daily report", "Daily report", false, 5},
 		{cmdFilter, []string{"/"}, "filter tickets", "Filter", false, 7},
 		{cmdRefresh, []string{"r"}, "refresh tickets", "Refresh", false, 4},
