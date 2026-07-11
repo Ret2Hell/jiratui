@@ -100,6 +100,31 @@ func (m *Model) createTaskCmd() tea.Cmd {
 	return tea.Batch(m.saveCacheCmd(), createCmd)
 }
 
+func (m *Model) updateTaskCmd() tea.Cmd {
+	if m.service == nil {
+		return func() tea.Msg { return errMsg{Err: fmt.Errorf("service is not configured")} }
+	}
+	key := m.editingTaskKey
+	original := m.editingTaskOriginal
+	summary := strings.TrimSpace(m.createSummary.Value())
+	if summary == "" {
+		return func() tea.Msg { return errMsg{Err: fmt.Errorf("summary is required")} }
+	}
+	m.updateIssueSummary(key, summary)
+	m.screen = screenMain
+	m.editingTaskKey = ""
+	m.editingTaskOriginal = ""
+	m.status = key + " queued"
+	return tea.Batch(m.saveCacheCmd(), func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := m.service.UpdateTaskSummary(ctx, key, summary); err != nil {
+			return taskUpdateFailedMsg{Key: key, Original: original, Err: err}
+		}
+		return taskUpdatedMsg{Key: key, Summary: summary}
+	})
+}
+
 func (m *Model) quickMoveCmd(target string) tea.Cmd {
 	issue, ok := m.selectedIssue()
 	if !ok || m.service == nil {

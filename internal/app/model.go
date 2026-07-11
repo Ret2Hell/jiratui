@@ -81,8 +81,10 @@ type Model struct {
 	setupFocus  int
 	setupStage  int
 
-	createSummary textinput.Model
-	createFocus   int
+	createSummary       textinput.Model
+	createFocus         int
+	editingTaskKey      string
+	editingTaskOriginal string
 
 	pointSelected         int
 	pointEditingKey       string

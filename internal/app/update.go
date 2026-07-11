@@ -68,6 +68,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "Create failed: " + msg.Err.Error()
 		m.recalcTotals()
 		cmds = append(cmds, m.saveCacheCmd())
+	case taskUpdatedMsg:
+		m.err = nil
+		m.status = "Updated " + msg.Key
+		cmds = append(cmds, m.saveCacheCmd())
+	case taskUpdateFailedMsg:
+		m.updateIssueSummary(msg.Key, msg.Original)
+		m.err = msg.Err
+		m.status = "Update failed: " + msg.Err.Error()
+		cmds = append(cmds, m.saveCacheCmd())
 	case issueTransitionedMsg:
 		if current, ok := m.issueByKey(msg.Key); !ok || statusEqual(current.Status, msg.Status) {
 			delete(m.pendingStatusOriginal, msg.Key)
@@ -242,7 +251,7 @@ func (m *Model) updateSetup(key tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
-	if key.String() == "R" || key.String() == "M" {
+	if key.String() == "M" {
 		return m.openReportCmd()
 	}
 	if key.String() == "?" {
@@ -295,6 +304,8 @@ func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
 		m.filterInput.Focus()
 	case "n":
 		m.openCreate()
+	case "e", "shift+r":
+		m.openEdit()
 	case "enter":
 		m.openPoints()
 	case "i", "p":
@@ -303,7 +314,7 @@ func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
 		return m.quickMoveCmd("new")
 	case "d", "x":
 		return m.quickMoveCmd("done")
-	case "m", "shift+r":
+	case "m":
 		return m.openReportCmd()
 	}
 	return nil
@@ -315,6 +326,9 @@ func (m *Model) updateCreate(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
 		m.screen = screenMain
 		return nil
 	case "enter":
+		if m.editingTaskKey != "" {
+			return m.updateTaskCmd()
+		}
 		return m.createTaskCmd()
 	case "tab":
 		m.focusCreate(m.createFocus + 1)
@@ -407,7 +421,22 @@ func (m *Model) focusCreate(_ int) {
 }
 
 func (m *Model) openCreate() {
+	m.editingTaskKey = ""
+	m.editingTaskOriginal = ""
 	m.createSummary.SetValue("")
+	m.createFocus = 0
+	m.focusCreate(0)
+	m.screen = screenCreate
+}
+
+func (m *Model) openEdit() {
+	issue, ok := m.selectedIssue()
+	if !ok || strings.HasPrefix(issue.Key, "NEW-") {
+		return
+	}
+	m.editingTaskKey = issue.Key
+	m.editingTaskOriginal = issue.Summary
+	m.createSummary.SetValue(issue.Summary)
 	m.createFocus = 0
 	m.focusCreate(0)
 	m.screen = screenCreate
@@ -576,6 +605,16 @@ func (m *Model) updateIssueStatus(key string, status jira.Status) {
 	for i := range m.issues {
 		if m.issues[i].Key == key {
 			m.issues[i].Status = status
+			m.issues[i].Updated = time.Now()
+			return
+		}
+	}
+}
+
+func (m *Model) updateIssueSummary(key, summary string) {
+	for i := range m.issues {
+		if m.issues[i].Key == key {
+			m.issues[i].Summary = summary
 			m.issues[i].Updated = time.Now()
 			return
 		}

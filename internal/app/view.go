@@ -43,7 +43,7 @@ func (m *Model) View() tea.View {
 
 func (m *Model) renderMain() string {
 	header := m.renderHeader()
-	footerText := "n new · t todo · p progress · d done · enter sp · m mail draft · / filter · r refresh · ? help · q quit"
+	footerText := "n new · e edit · t todo · p progress · d done · enter sp · m mail draft · / filter · r refresh · ? help · q quit"
 	if m.screen == screenPoints {
 		footerText = "←/→ or ↑/↓ change points · 1-7 select · enter save · esc cancel"
 	}
@@ -315,9 +315,13 @@ func (m *Model) renderCreateModal() string {
 	background := m.renderMain()
 	w := createModalWidth(m.width)
 	body := m.renderCreate(max(1, w-8))
-	header := m.styles.Title.Render("New task")
-	subtitle := m.styles.Muted.Render("Create a Jira task assigned to you.")
-	actions := lipgloss.NewStyle().Foreground(lipgloss.Color("#CBD5E1")).Background(lipgloss.Color("#1E293B")).Padding(0, 1).Render("enter create") + " " + m.styles.Muted.Render("esc cancel")
+	title, description, action := "New task", "Create a Jira task assigned to you.", "enter create"
+	if m.editingTaskKey != "" {
+		title, description, action = "Edit task", "Update "+m.editingTaskKey+".", "enter save"
+	}
+	header := m.styles.Title.Render(title)
+	subtitle := m.styles.Muted.Render(description)
+	actions := lipgloss.NewStyle().Foreground(lipgloss.Color("#CBD5E1")).Background(lipgloss.Color("#1E293B")).Padding(0, 1).Render(action) + " " + m.styles.Muted.Render("esc cancel")
 	if m.loading {
 		message := firstNonEmpty(m.status, "Creating task")
 		actions = m.spinner.View() + " " + m.styles.Success.Render(message)
@@ -392,6 +396,7 @@ func (m *Model) renderHelp() string {
 		"",
 		"Daily workflow:",
 		"  n       new task",
+		"  e / R   edit selected task",
 		"  enter   points: set story points",
 		"  p       progress: quick move to In Progress",
 		"  i       progress: quick move to In Progress",

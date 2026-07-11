@@ -29,6 +29,17 @@ type taskCreateFailedMsg struct {
 	Err     error
 }
 
+type taskUpdatedMsg struct {
+	Key     string
+	Summary string
+}
+
+type taskUpdateFailedMsg struct {
+	Key      string
+	Original string
+	Err      error
+}
+
 type issueTransitionedMsg struct {
 	Key    string
 	Status jira.Status
