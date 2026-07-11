@@ -131,6 +131,9 @@ func filterReportChanges(changes []jira.StatusChange, opts Options) []jira.Statu
 }
 
 func issueStatusCategory(issue jira.Issue) string {
+	if jira.StatusCategoryForName(issue.Status.Name) == "blocked" {
+		return "blocked"
+	}
 	if issue.Status.Category.Key != "" {
 		return issue.Status.Category.Key
 	}
