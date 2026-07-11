@@ -358,7 +358,6 @@ func (m *Model) renderReport() string {
 	m.reportEditor.SetHeight(editorHeight)
 	actions := m.styles.Muted.Render(compactBindingLine(m.activeBindings()))
 	content := strings.Join([]string{
-		truncatePlain(m.styles.Subtitle.Render(m.reportDraft.Subject), contentWidth),
 		"",
 		m.reportEditor.View(),
 		"",

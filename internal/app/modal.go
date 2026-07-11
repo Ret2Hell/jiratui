@@ -25,7 +25,7 @@ func popupHeight(screenHeight, contentHeight, minimumHeight int) int {
 
 func (m *Model) createPopupRects() (rect, rect) {
 	width := popupWidth(m.width, 100, 80)
-	totalHeight := min(max(10, m.height*3/4), max(10, m.height-2))
+	totalHeight := min(max(10, m.height/2), max(10, m.height-2))
 	summaryHeight := 3
 	descriptionHeight := max(7, totalHeight-summaryHeight)
 	totalHeight = summaryHeight + descriptionHeight
