@@ -66,14 +66,16 @@ type Model struct {
 	status              string
 	err                 error
 
-	projectName     string
-	sprint          jira.Sprint
-	issues          []jira.Issue
-	selected        int
-	ticketViewport  listViewport
-	detailsViewport listViewport
-	tempIssueSeq    int
-	totals          report.PointTotals
+	projectName         string
+	sprint              jira.Sprint
+	issues              []jira.Issue
+	selected            int
+	ticketViewport      listViewport
+	detailsViewport     listViewport
+	keybindingsViewport listViewport
+	modalParent         screen
+	tempIssueSeq        int
+	totals              report.PointTotals
 
 	filtering   bool
 	filterInput textinput.Model
@@ -201,7 +203,7 @@ func (m *Model) setComponentWidths() {
 		m.setupInputs[i].SetWidth(setupWidth)
 	}
 	m.filterInput.SetWidth(max(1, contentWidth-4))
-	createWidth := min(max(1, m.width), createModalWidth(m.width))
+	createWidth := min(max(1, m.width), popupWidth(m.width, 78, 56))
 	createInputWidth := max(1, createWidth-10)
 	m.createSummary.SetWidth(createInputWidth)
 	m.reportEditor.SetWidth(max(1, contentWidth-8))

@@ -73,7 +73,7 @@ jiratui --setup
 | Key | Action |
 | --- | --- |
 | `q` | quit |
-| `?` | help |
+| `?` | open grouped keybindings |
 | `r` | refresh tickets |
 | `/` | filter tickets |
 | `tab` | switch panel focus |

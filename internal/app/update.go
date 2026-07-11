@@ -172,6 +172,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key.Keystroke() == "ctrl+c" {
 			return m, tea.Quit
 		}
+		if key.Keystroke() == "?" && m.screen == screenPoints {
+			m.openKeybindingsModal()
+			return m, tea.Batch(cmds...)
+		}
 		switch m.screen {
 		case screenSetup:
 			cmds = append(cmds, m.updateSetup(key))
@@ -184,9 +188,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenReport:
 			cmds = append(cmds, m.updateReport(key, msg))
 		case screenHelp:
-			if binding, ok := bindingForKey(m.activeBindings(), key.Keystroke()); ok && binding.Command == cmdCancel {
-				m.screen = screenMain
-			}
+			cmds = append(cmds, m.updateKeybindingsModal(key))
 		}
 	}
 
@@ -197,8 +199,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if mouse, ok := msg.(tea.MouseClickMsg); ok && m.screen == screenMain {
 		m.updateMouse(mouse)
 	}
-	if wheel, ok := msg.(tea.MouseWheelMsg); ok && m.screen == screenMain {
-		m.updateMouseWheel(wheel)
+	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
+		switch m.screen {
+		case screenMain:
+			m.updateMouseWheel(wheel)
+		case screenHelp:
+			m.scrollKeybindingsModal(wheel)
+		}
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -294,7 +301,7 @@ func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
 	case cmdQuit:
 		return tea.Quit
 	case cmdHelp:
-		m.screen = screenHelp
+		m.openKeybindingsModal()
 	case cmdRefresh:
 		m.syncingSprint = true
 		m.loading = len(m.issues) == 0
@@ -340,6 +347,54 @@ func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
 		m.navigateBoundary(true)
 	}
 	return nil
+}
+
+func (m *Model) openKeybindingsModal() {
+	m.modalParent = m.screen
+	m.keybindingsViewport.Offset = 0
+	m.screen = screenHelp
+}
+
+func (m *Model) updateKeybindingsModal(key tea.KeyPressMsg) tea.Cmd {
+	binding, ok := bindingForKey(m.activeBindings(), key.Keystroke())
+	if !ok {
+		return nil
+	}
+	lineCount, pageSize := m.keybindingsModalMetrics()
+	switch binding.Command {
+	case cmdCancel:
+		m.screen = m.modalParent
+		if m.screen == screenHelp {
+			m.screen = screenMain
+		}
+	case cmdUp:
+		m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset-1, lineCount, pageSize)
+	case cmdDown:
+		m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset+1, lineCount, pageSize)
+	case cmdPageUp:
+		m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset-pageSize, lineCount, pageSize)
+	case cmdPageDown:
+		m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset+pageSize, lineCount, pageSize)
+	case cmdHome:
+		m.keybindingsViewport.Offset = 0
+	case cmdEnd:
+		m.keybindingsViewport.Offset = clampOffset(lineCount, lineCount, pageSize)
+	}
+	return nil
+}
+
+func (m *Model) scrollKeybindingsModal(msg tea.MouseWheelMsg) {
+	delta := 0
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		delta = -3
+	case tea.MouseWheelDown:
+		delta = 3
+	default:
+		return
+	}
+	lineCount, pageSize := m.keybindingsModalMetrics()
+	m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset+delta, lineCount, pageSize)
 }
 
 func (m *Model) updateCreate(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {

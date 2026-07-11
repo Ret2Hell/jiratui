@@ -7,23 +7,25 @@ import (
 )
 
 func (m *Model) renderBindingFooter() string {
-	width := max(0, m.width)
-	return m.styles.Footer.Render(m.bindingFooterLine(width))
+	return m.bindingFooterLine(max(0, m.width))
 }
 
 func (m *Model) bindingFooterLine(width int) string {
 	if width <= 0 {
 		return ""
 	}
-	groups := make([]string, 0)
+
+	groups := make([]string, 0, 5)
 	for _, b := range m.activeBindings() {
 		if !b.Footer || len(b.Keys) == 0 {
 			continue
 		}
-		groups = append(groups, bindingDisplayKey(b)+": "+b.Short)
+		group := m.styles.Footer.Render(b.Short+": ") + m.styles.FooterKey.Render(bindingDisplayKey(b))
+		groups = append(groups, group)
 	}
-	prefix, separator := " ", " | "
-	line := prefix
+
+	line := " "
+	separator := m.styles.FooterSeparator.Render(" | ")
 	for i, group := range groups {
 		addition := group
 		if i > 0 {
@@ -33,24 +35,21 @@ func (m *Model) bindingFooterLine(width int) string {
 			line += addition
 			continue
 		}
-		if ansi.StringWidth(line+" …") <= width {
-			line += " …"
+		ellipsis := m.styles.FooterSeparator.Render(" | …")
+		if ansi.StringWidth(line+ellipsis) <= width {
+			line += ellipsis
 		}
 		break
 	}
 	return padRight(truncatePlain(line, width), width)
 }
 
-func (m *Model) helpContent() string {
-	var lines []string
-	for _, b := range m.activeBindingsForHelp() {
-		lines = append(lines, "  "+strings.Join(b.Keys, " / ")+"  "+b.Description)
+func compactBindingLine(bindings []binding) string {
+	parts := make([]string, 0, len(bindings))
+	for _, b := range bindings {
+		if b.Footer {
+			parts = append(parts, b.Short+": "+bindingDisplayKey(b))
+		}
 	}
-	return strings.Join(lines, "\n")
-}
-
-func (m *Model) activeBindingsForHelp() []binding {
-	copy := *m
-	copy.screen = screenMain
-	return copy.activeBindings()
+	return strings.Join(parts, " | ")
 }

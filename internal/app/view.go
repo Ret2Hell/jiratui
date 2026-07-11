@@ -30,7 +30,7 @@ func (m *Model) View() tea.View {
 		case screenReport:
 			content = m.renderReport()
 		case screenHelp:
-			content = m.renderHelp()
+			content = m.renderKeybindingsModal()
 		default:
 			content = m.renderMain()
 		}
@@ -55,7 +55,7 @@ func (m *Model) minimumScreenSize() (int, int) {
 	case screenCreate:
 		return 40, 12
 	case screenReport:
-		return 30, 8
+		return 40, 10
 	case screenHelp:
 		return 30, 10
 	default:
@@ -154,10 +154,6 @@ func (m *Model) renderHeaderStatus() string {
 
 func (m *Model) stat(label string, value string, valueStyle lipgloss.Style) string {
 	return m.styles.StatLabel.Render(label+" ") + valueStyle.Render(value)
-}
-
-func (m *Model) renderPanel(title string, content string, width int, outerHeight int, active bool) string {
-	return m.renderPanelSpec(panelSpec{Title: title, Content: content, Width: width, Height: outerHeight, Active: active})
 }
 
 func (m *Model) renderTickets(width int, height int) string {
@@ -299,30 +295,23 @@ func (m *Model) renderSetup() string {
 
 func (m *Model) renderCreateModal() string {
 	background := m.renderMain()
-	w := createModalWidth(m.width)
-	body := m.renderCreate(max(1, w-8))
+	width := popupWidth(m.width, 78, 56)
+	contentWidth := max(1, width-4)
+	body := m.renderCreate(contentWidth)
 	title, description := "New task", "Create a Jira task assigned to you."
 	if m.editingTaskKey != "" {
 		title, description = "Edit task", "Update "+m.editingTaskKey+"."
 	}
-	header := m.styles.Title.Render(title)
-	subtitle := m.styles.Muted.Render(description)
-	actions := m.styles.Footer.Render(strings.TrimSpace(m.bindingFooterLine(max(1, w-8))))
+	actions := m.styles.Muted.Render(compactBindingLine(m.activeBindings()))
 	if m.loading {
 		message := firstNonEmpty(m.status, "Creating task")
 		actions = m.spinner.View() + " " + m.styles.Success.Render(message)
 	} else if m.err != nil {
 		actions = m.styles.Error.Render(m.err.Error()) + " " + m.styles.Muted.Render("esc cancel")
 	}
-	content := strings.Join([]string{header, subtitle, "", body, "", actions}, "\n")
-	panel := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#A78BFA")).
-		Background(lipgloss.Color("#111827")).
-		Padding(1, 2).
-		Width(max(1, w-6)).
-		Render(content)
-	return overlayCentered(background, addDropShadow(panel), m.width, m.height)
+	content := strings.Join([]string{m.styles.Muted.Render(description), "", body, "", actions}, "\n")
+	height := popupHeight(m.height, lipgloss.Height(content), 8)
+	return m.renderPopupPanel(background, title, content, width, height, nil)
 }
 
 func (m *Model) renderCreate(width int) string {
@@ -370,31 +359,22 @@ func (m *Model) renderCreateLabel(index int, label string, hint string, count in
 }
 
 func (m *Model) renderReport() string {
-	title := truncatePlain(m.styles.Title.Render("Daily Report")+m.styles.Subtitle.Render(" · "+m.reportDraft.Subject), m.width)
-	footer := m.renderBindingFooter()
-	bodyHeight := max(4, m.height-lipgloss.Height(title)-lipgloss.Height(footer))
-	body := m.renderPanel("Edit before saving", m.reportEditor.View(), m.width, bodyHeight, true)
-	return lipgloss.JoinVertical(lipgloss.Left, title, body, footer)
-}
-
-func (m *Model) renderHelp() string {
-	content := m.styles.Title.Render("jiratui help") + "\n\nDaily workflow:\n" + m.helpContent() + "\n\nNavigation: arrows or j/k, pgup/pgdown, home/end (g/G), tab changes focus.\n\nThis app intentionally omits comments, attachments, links, worklogs, and broad Jira search."
-	return m.renderModal("Help", content, strings.TrimSpace(m.bindingFooterLine(20)))
-}
-
-func (m *Model) renderModal(title string, body string, footer string) string {
-	w := min(max(20, m.width-4), 90)
-	footerHeight := 0
-	if footer != "" {
-		footerHeight = 1
-	}
-	panelHeight := min(max(6, lipgloss.Height(body)+2), max(6, m.height-footerHeight-2))
-	panel := m.renderPanel(title, body, w, panelHeight, true)
-	if footer != "" {
-		line := m.styles.Footer.Render(padRight(truncatePlain(footer, w), w))
-		panel = lipgloss.JoinVertical(lipgloss.Left, panel, line)
-	}
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel, lipgloss.WithWhitespaceChars(" "))
+	background := m.renderMain()
+	width := popupWidth(m.width, 100, 80)
+	height := min(max(10, m.height*3/4), max(8, m.height-2))
+	contentWidth := max(1, width-4)
+	editorHeight := max(1, height-6)
+	m.reportEditor.SetWidth(contentWidth)
+	m.reportEditor.SetHeight(editorHeight)
+	actions := m.styles.Muted.Render(compactBindingLine(m.activeBindings()))
+	content := strings.Join([]string{
+		truncatePlain(m.styles.Subtitle.Render(m.reportDraft.Subject), contentWidth),
+		"",
+		m.reportEditor.View(),
+		"",
+		actions,
+	}, "\n")
+	return m.renderPopupPanel(background, "Daily Report", content, width, height, nil)
 }
 
 func (m *Model) showFilterLine() bool {
@@ -465,25 +445,6 @@ func (m *Model) styleStatus(status jira.Status) lipgloss.Style {
 	default:
 		return m.styles.Todo
 	}
-}
-
-func createModalWidth(screenWidth int) int {
-	preferred := min(max(56, screenWidth/2), 78)
-	return max(20, min(preferred, max(20, screenWidth-4)))
-}
-
-func addDropShadow(value string) string {
-	lines := slices.Collect(strings.SplitSeq(value, "\n"))
-	width := maxLineWidth(lines)
-	shadow := lipgloss.NewStyle().Background(lipgloss.Color("#0B1120")).Render
-	for i := range lines {
-		lines[i] = padRight(lines[i], width)
-		if i > 0 {
-			lines[i] += shadow("  ")
-		}
-	}
-	lines = append(lines, "  "+shadow(strings.Repeat(" ", width)))
-	return strings.Join(lines, "\n")
 }
 
 func overlayCentered(background string, overlay string, width int, height int) string {

@@ -180,7 +180,7 @@ func TestScreensRenderAtTheirMinimumSize(t *testing.T) {
 		{screenMain, 20, 6},
 		{screenCreate, 40, 12},
 		{screenPoints, 20, 6},
-		{screenReport, 30, 8},
+		{screenReport, 40, 10},
 		{screenHelp, 30, 10},
 	}
 	for _, tt := range cases {
@@ -206,7 +206,7 @@ func TestPointsFooterDescribesSelectionControls(t *testing.T) {
 	m := newMainTestModel(t, 100, 20)
 	m.screen = screenPoints
 	plain := ansi.Strip(m.renderBindingFooter())
-	for _, want := range []string{"←/→: change", "0-6: select", "enter: save", "esc: cancel"} {
+	for _, want := range []string{"Change: ←/→", "Select: 0-6", "Save: enter", "Cancel: esc"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("points footer %q missing %q", plain, want)
 		}

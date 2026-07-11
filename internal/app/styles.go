@@ -15,6 +15,9 @@ type styles struct {
 	PanelMeta         lipgloss.Style
 	Scrollbar         lipgloss.Style
 	Footer            lipgloss.Style
+	FooterKey         lipgloss.Style
+	FooterSeparator   lipgloss.Style
+	ModalSection      lipgloss.Style
 	Muted             lipgloss.Style
 	Error             lipgloss.Style
 	Success           lipgloss.Style
@@ -39,7 +42,10 @@ func newStyles() styles {
 		PanelActiveTitle:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#E0B0FF")),
 		PanelMeta:         lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8")),
 		Scrollbar:         lipgloss.NewStyle().Foreground(lipgloss.Color("#A78BFA")),
-		Footer:            lipgloss.NewStyle().Foreground(lipgloss.Color("#CBD5E1")).Background(lipgloss.Color("#1E293B")),
+		Footer:            lipgloss.NewStyle().Foreground(lipgloss.Color("#CBD5E1")),
+		FooterKey:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#E0B0FF")),
+		FooterSeparator:   lipgloss.NewStyle().Foreground(lipgloss.Color("#64748B")),
+		ModalSection:      lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#34D399")),
 		Muted:             lipgloss.NewStyle().Foreground(lipgloss.Color("#64748B")),
 		Error:             lipgloss.NewStyle().Foreground(lipgloss.Color("#FB7185")),
 		Success:           lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399")),

@@ -1,6 +1,9 @@
 package app
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 type commandID string
 
@@ -37,54 +40,136 @@ type binding struct {
 	Priority           int
 }
 
+type bindingGroup struct {
+	Title    string
+	Bindings []binding
+}
+
+func mainBindings() []binding {
+	return []binding{
+		{cmdNew, []string{"n"}, "create a new task", "New task", true, 8},
+		{cmdEdit, []string{"e", "shift+r"}, "edit the selected task", "Edit", true, 8},
+		{cmdPoints, []string{"enter"}, "set story points", "Story points", true, 8},
+		{cmdTodo, []string{"t"}, "move to To Do", "To Do", false, 6},
+		{cmdProgress, []string{"p", "i"}, "move to In Progress", "In Progress", false, 6},
+		{cmdDone, []string{"d", "x"}, "move to Done", "Done", false, 6},
+		{cmdReport, []string{"m", "shift+m"}, "open daily report", "Daily report", false, 5},
+		{cmdFilter, []string{"/"}, "filter tickets", "Filter", false, 7},
+		{cmdRefresh, []string{"r"}, "refresh tickets", "Refresh", false, 4},
+		{cmdFocus, []string{"tab"}, "switch panel focus", "Switch panel", false, 5},
+		{cmdUp, []string{"up", "k"}, "move up", "Up", false, 0},
+		{cmdDown, []string{"down", "j"}, "move down", "Down", false, 0},
+		{cmdPageUp, []string{"pgup"}, "move one page up", "Page up", false, 0},
+		{cmdPageDown, []string{"pgdown"}, "move one page down", "Page down", false, 0},
+		{cmdHome, []string{"home", "g"}, "go to the first item", "First", false, 0},
+		{cmdEnd, []string{"end", "shift+g"}, "go to the last item", "Last", false, 0},
+		{cmdHelp, []string{"?"}, "show all keybindings", "Keybindings", true, 3},
+		{cmdQuit, []string{"q", "ctrl+c"}, "quit", "Quit", false, 1},
+	}
+}
+
+func createBindings() []binding {
+	return []binding{
+		{cmdSave, []string{"enter"}, "create or save the task", "Save", true, 10},
+		{cmdFocus, []string{"tab", "shift+tab"}, "move between fields", "Fields", false, 5},
+		{cmdCancel, []string{"esc"}, "close without saving", "Cancel", true, 10},
+	}
+}
+
+func pointsBindings() []binding {
+	return []binding{
+		{cmdChange, []string{"left", "right", "up", "down", "h", "j", "k", "l"}, "change story points", "Change", true, 10},
+		{cmdSelect, []string{"0", "1", "2", "3", "4", "5", "6"}, "select a story-point value", "Select", true, 10},
+		{cmdSave, []string{"enter"}, "save story points", "Save", true, 10},
+		{cmdCancel, []string{"esc"}, "close without saving", "Cancel", true, 10},
+	}
+}
+
+func filterBindings() []binding {
+	return []binding{
+		{cmdSave, []string{"enter"}, "apply the filter", "Apply", true, 10},
+		{cmdCancel, []string{"esc"}, "clear and close the filter", "Clear", true, 10},
+	}
+}
+
+func reportBindings() []binding {
+	return []binding{
+		{cmdSave, []string{"ctrl+s"}, "save the report draft", "Save", true, 10},
+		{cmdCancel, []string{"esc"}, "close without saving", "Cancel", true, 10},
+	}
+}
+
+func setupBindings(saveLabel string) []binding {
+	return []binding{
+		{cmdFocus, []string{"tab", "shift+tab"}, "move between fields", "Fields", true, 10},
+		{cmdSave, []string{"enter"}, saveLabel, saveLabel, true, 10},
+		{cmdQuit, []string{"q"}, "quit", "Quit", true, 1},
+	}
+}
+
+func keybindingsModalBindings() []binding {
+	return []binding{
+		{cmdUp, []string{"up", "k"}, "scroll up", "Scroll", false, 5},
+		{cmdDown, []string{"down", "j"}, "scroll down", "Scroll", false, 5},
+		{cmdPageUp, []string{"pgup"}, "page up", "Page up", false, 5},
+		{cmdPageDown, []string{"pgdown"}, "page down", "Page down", false, 5},
+		{cmdHome, []string{"home", "g"}, "go to top", "Top", false, 5},
+		{cmdEnd, []string{"end", "shift+g"}, "go to bottom", "Bottom", false, 5},
+		{cmdCancel, []string{"esc", "?", "q"}, "close keybindings", "Close", true, 10},
+	}
+}
+
 func (m *Model) activeBindings() []binding {
 	switch m.screen {
 	case screenCreate:
-		return []binding{
-			{cmdSave, []string{"enter"}, "save task", "save", true, 10},
-			{cmdFocus, []string{"tab", "shift+tab"}, "next/previous field", "fields", false, 5},
-			{cmdCancel, []string{"esc"}, "cancel", "cancel", true, 10},
-		}
+		return createBindings()
 	case screenPoints:
-		return []binding{
-			{cmdChange, []string{"left", "right", "up", "down", "h", "j", "k", "l"}, "change story points", "change", true, 10},
-			{cmdSelect, []string{"0", "1", "2", "3", "4", "5", "6"}, "select story points", "select", true, 10},
-			{cmdSave, []string{"enter"}, "save story points", "save", true, 10},
-			{cmdCancel, []string{"esc"}, "cancel", "cancel", true, 10},
-		}
+		return pointsBindings()
 	case screenReport:
-		return []binding{{cmdSave, []string{"ctrl+s"}, "save report draft", "save", true, 10}, {cmdCancel, []string{"esc"}, "cancel", "cancel", true, 10}}
+		return reportBindings()
 	case screenHelp:
-		return []binding{{cmdCancel, []string{"esc", "?", "q"}, "close help", "close", true, 10}}
+		return keybindingsModalBindings()
 	case screenSetup:
-		label := "continue"
+		label := "Continue"
 		if m.setupStage == 1 {
-			label = "save"
+			label = "Save"
 		}
-		return []binding{{cmdFocus, []string{"tab", "shift+tab"}, "next/previous field", "fields", true, 10}, {cmdSave, []string{"enter"}, label, label, true, 10}, {cmdQuit, []string{"q"}, "quit", "quit", true, 1}}
+		return setupBindings(label)
 	}
-	b := []binding{
-		{cmdNew, []string{"n"}, "new task", "new", true, 8},
-		{cmdEdit, []string{"e", "shift+r"}, "edit selected task", "edit", true, 8},
-		{cmdPoints, []string{"enter"}, "set story points", "points", true, 8},
-		{cmdTodo, []string{"t"}, "move to To Do", "todo", true, 6},
-		{cmdProgress, []string{"p", "i"}, "move to In Progress", "progress", true, 6},
-		{cmdDone, []string{"d", "x"}, "move to Done", "done", true, 6},
-		{cmdReport, []string{"m", "shift+m"}, "open daily report", "report", true, 5},
-		{cmdFilter, []string{"/"}, "filter tickets", "filter", true, 7},
-		{cmdRefresh, []string{"r"}, "refresh tickets", "refresh", true, 4},
-		{cmdFocus, []string{"tab"}, "switch panel focus", "focus", true, 5},
-		{cmdUp, []string{"up", "k"}, "move up", "up", false, 0}, {cmdDown, []string{"down", "j"}, "move down", "down", false, 0},
-		{cmdPageUp, []string{"pgup"}, "page up", "page up", false, 0}, {cmdPageDown, []string{"pgdown"}, "page down", "page down", false, 0},
-		{cmdHome, []string{"home", "g"}, "first item", "first", false, 0}, {cmdEnd, []string{"end", "shift+g"}, "last item", "last", false, 0},
-		{cmdHelp, []string{"?"}, "show help", "help", true, 3}, {cmdQuit, []string{"q"}, "quit", "quit", true, 1},
-	}
+
+	bindings := mainBindings()
 	if len(m.visibleIssues()) == 0 {
-		b = slices.DeleteFunc(b, func(x binding) bool {
-			return x.Command == cmdEdit || x.Command == cmdPoints || x.Command == cmdTodo || x.Command == cmdProgress || x.Command == cmdDone
+		bindings = slices.DeleteFunc(bindings, func(item binding) bool {
+			return slices.Contains([]commandID{cmdEdit, cmdPoints, cmdTodo, cmdProgress, cmdDone}, item.Command)
 		})
 	}
-	return b
+	return bindings
+}
+
+func allBindingGroups() []bindingGroup {
+	main := mainBindings()
+	return []bindingGroup{
+		{Title: "Tasks", Bindings: bindingsForCommands(main, cmdNew, cmdEdit, cmdPoints, cmdReport)},
+		{Title: "Workflow", Bindings: bindingsForCommands(main, cmdTodo, cmdProgress, cmdDone)},
+		{Title: "Navigation", Bindings: bindingsForCommands(main, cmdUp, cmdDown, cmdPageUp, cmdPageDown, cmdHome, cmdEnd, cmdFocus)},
+		{Title: "View", Bindings: bindingsForCommands(main, cmdFilter, cmdRefresh)},
+		{Title: "Filter mode", Bindings: filterBindings()},
+		{Title: "Story points", Bindings: pointsBindings()},
+		{Title: "Forms and dialogs", Bindings: append(createBindings(), reportBindings()...)},
+		{Title: "Setup", Bindings: setupBindings("continue or save setup")},
+		{Title: "Keybindings popup", Bindings: keybindingsModalBindings()},
+		{Title: "Application", Bindings: bindingsForCommands(main, cmdHelp, cmdQuit)},
+	}
+}
+
+func bindingsForCommands(bindings []binding, commands ...commandID) []binding {
+	result := make([]binding, 0, len(commands))
+	for _, command := range commands {
+		if index := slices.IndexFunc(bindings, func(item binding) bool { return item.Command == command }); index >= 0 {
+			result = append(result, bindings[index])
+		}
+	}
+	return result
 }
 
 func bindingDisplayKey(b binding) string {
@@ -97,8 +182,41 @@ func bindingDisplayKey(b binding) string {
 		if len(b.Keys) == 0 {
 			return ""
 		}
-		return b.Keys[0]
+		return keyLabel(b.Keys[0])
 	}
+}
+
+func keyLabel(key string) string {
+	switch key {
+	case "up":
+		return "↑"
+	case "down":
+		return "↓"
+	case "left":
+		return "←"
+	case "right":
+		return "→"
+	case "pgup":
+		return "PgUp"
+	case "pgdown":
+		return "PgDn"
+	case "shift+r":
+		return "R"
+	case "shift+m":
+		return "M"
+	case "shift+g":
+		return "G"
+	default:
+		return key
+	}
+}
+
+func bindingKeyList(b binding) string {
+	labels := make([]string, len(b.Keys))
+	for i, key := range b.Keys {
+		labels[i] = keyLabel(key)
+	}
+	return strings.Join(labels, " / ")
 }
 
 func bindingForKey(bindings []binding, key string) (binding, bool) {
