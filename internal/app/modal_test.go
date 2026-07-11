@@ -11,12 +11,12 @@ import (
 func TestMainFooterShowsOnlyPrimaryContextActions(t *testing.T) {
 	m := newMainTestModel(t, 120, 30)
 	footer := ansi.Strip(m.renderBindingFooter())
-	for _, want := range []string{"New task: n", "Edit: e", "Story points: enter", "Keybindings: ?"} {
+	for _, want := range []string{"Create: n", "Story points: enter", "To Do: t", "In Progress: p", "Done: d", "Keybindings: ?"} {
 		if !strings.Contains(footer, want) {
 			t.Errorf("footer %q missing %q", footer, want)
 		}
 	}
-	for _, unwanted := range []string{"To Do", "Daily report", "Refresh", "Quit"} {
+	for _, unwanted := range []string{"Edit: e", "Daily report", "Refresh", "Quit"} {
 		if strings.Contains(footer, unwanted) {
 			t.Errorf("footer %q unexpectedly contains %q", footer, unwanted)
 		}
