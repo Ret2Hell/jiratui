@@ -199,7 +199,7 @@ func (c *Client) Fields(ctx context.Context) ([]Field, error) {
 // SearchMySprintIssues returns issues assigned to the current user in a sprint.
 func (c *Client) SearchMySprintIssues(ctx context.Context, projectKey string, sprintID int, storyPointsFieldID string) ([]Issue, error) {
 	jql := fmt.Sprintf(`project = %q AND sprint = %d AND assignee = currentUser() ORDER BY Rank ASC`, projectKey, sprintID)
-	fields := []string{"summary", "status", "assignee", "issuetype", "updated"}
+	fields := []string{"summary", "description", "status", "assignee", "issuetype", "updated"}
 	if storyPointsFieldID != "" {
 		fields = append(fields, storyPointsFieldID)
 	}
@@ -209,7 +209,7 @@ func (c *Client) SearchMySprintIssues(ctx context.Context, projectKey string, sp
 // SearchUpdatedIssues returns sprint issues updated since the given time.
 func (c *Client) SearchUpdatedIssues(ctx context.Context, projectKey string, sprintID int, since time.Time, storyPointsFieldID string) ([]Issue, error) {
 	jql := fmt.Sprintf(`project = %q AND sprint = %d AND updated >= %q ORDER BY updated DESC`, projectKey, sprintID, since.Format("2006-01-02 15:04"))
-	fields := []string{"summary", "status", "assignee", "issuetype", "updated"}
+	fields := []string{"summary", "description", "status", "assignee", "issuetype", "updated"}
 	if storyPointsFieldID != "" {
 		fields = append(fields, storyPointsFieldID)
 	}
@@ -240,7 +240,7 @@ func (c *Client) CreateTask(ctx context.Context, input CreateTaskInput) (Issue, 
 	if err := c.do(ctx, http.MethodPost, "/rest/api/3/issue", nil, map[string]any{"fields": fields}, &raw); err != nil {
 		return Issue{}, err
 	}
-	return Issue{ID: raw.ID, Key: raw.Key, Summary: input.Summary, StoryPoints: input.StoryPoints}, nil
+	return Issue{ID: raw.ID, Key: raw.Key, Summary: input.Summary, Description: input.Description, StoryPoints: input.StoryPoints}, nil
 }
 
 // AddIssuesToSprint adds issues to a Jira sprint.
@@ -285,10 +285,14 @@ func (c *Client) TransitionIssue(ctx context.Context, issueKey, transitionID str
 	return c.do(ctx, http.MethodPost, path, nil, payload, nil)
 }
 
-// UpdateSummary updates an issue's summary.
-func (c *Client) UpdateSummary(ctx context.Context, issueKey, summary string) error {
+// UpdateTask updates an issue's summary and description.
+func (c *Client) UpdateTask(ctx context.Context, issueKey, summary, description string) error {
+	fields := map[string]any{"summary": summary, "description": nil}
+	if description != "" {
+		fields["description"] = textToADF(description)
+	}
 	path := fmt.Sprintf("/rest/api/3/issue/%s", url.PathEscape(issueKey))
-	return c.do(ctx, http.MethodPut, path, nil, map[string]any{"fields": map[string]any{"summary": summary}}, nil)
+	return c.do(ctx, http.MethodPut, path, nil, map[string]any{"fields": fields}, nil)
 }
 
 // UpdateStoryPoints sets or clears the story points custom field for an issue.

@@ -23,6 +23,17 @@ func popupHeight(screenHeight, contentHeight, minimumHeight int) int {
 	return min(height, available)
 }
 
+func (m *Model) createPopupRects() (rect, rect) {
+	width := popupWidth(m.width, 100, 80)
+	totalHeight := min(max(10, m.height*3/4), max(10, m.height-2))
+	summaryHeight := 3
+	descriptionHeight := max(7, totalHeight-summaryHeight)
+	totalHeight = summaryHeight + descriptionHeight
+	x := max(0, (m.width-width)/2)
+	y := max(0, (m.height-totalHeight)/2)
+	return rect{X: x, Y: y, Width: width, Height: summaryHeight}, rect{X: x, Y: y + summaryHeight, Width: width, Height: descriptionHeight}
+}
+
 func (m *Model) renderPopupPanel(background, title, content string, width, height int, scrollbar *scrollbarState) string {
 	panel := m.renderPanelSpec(panelSpec{
 		Title:     title,
@@ -33,6 +44,12 @@ func (m *Model) renderPopupPanel(background, title, content string, width, heigh
 		Scrollbar: scrollbar,
 	})
 	return overlayCentered(background, panel, m.width, m.height)
+}
+
+func (m *Model) mainBackground() string {
+	background := *m
+	background.screen = screenMain
+	return background.renderMain()
 }
 
 func (m *Model) modalBackground() string {

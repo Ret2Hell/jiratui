@@ -41,6 +41,16 @@ type indexedIssue struct {
 	Issue jira.Issue
 }
 
+type taskContent struct {
+	Summary     string
+	Description string
+}
+
+type pendingTaskUpdate struct {
+	Original taskContent
+	Desired  taskContent
+}
+
 // Model is the root Bubble Tea model.
 type Model struct {
 	cfg        config.Config
@@ -85,16 +95,19 @@ type Model struct {
 	setupFocus  int
 	setupStage  int
 
-	createSummary       textinput.Model
-	createFocus         int
-	editingTaskKey      string
-	editingTaskOriginal string
+	createSummary          textinput.Model
+	createDescription      textarea.Model
+	createFocus            int
+	editingTaskKey         string
+	editingTaskOriginal    string
+	editingTaskDescription string
 
 	pointSelected         int
 	pointEditingKey       string
 	pointOriginal         *float64
 	pendingPointOriginals map[string]*float64
 	pendingStatusOriginal map[string]jira.Status
+	pendingTaskUpdates    map[string]pendingTaskUpdate
 	pendingCreates        map[string]jira.Issue
 	localStatusChanges    map[string]jira.StatusChange
 
@@ -120,6 +133,7 @@ func New(cfg config.Config, configPath string, svc service.Service, factory serv
 		status:                initialStatus,
 		pendingPointOriginals: make(map[string]*float64),
 		pendingStatusOriginal: make(map[string]jira.Status),
+		pendingTaskUpdates:    make(map[string]pendingTaskUpdate),
 		pendingCreates:        make(map[string]jira.Issue),
 		localStatusChanges:    make(map[string]jira.StatusChange),
 		selectionSpring:       harmonica.NewSpring(harmonica.FPS(60), 10, 0.8),
@@ -190,9 +204,17 @@ func (m *Model) initInputs() {
 
 	m.createSummary = textinput.New()
 	m.createSummary.Placeholder = "What needs to be done?"
+	m.createSummary.Prompt = ""
 	m.createSummary.Focus()
 
+	m.createDescription = textarea.New()
+	m.createDescription.Placeholder = "Add context, acceptance criteria, or implementation notes…"
+	m.createDescription.Prompt = ""
+	m.createDescription.ShowLineNumbers = false
+	m.createDescription.Blur()
+
 	m.reportEditor = textarea.New()
+	m.reportEditor.Prompt = ""
 	m.reportEditor.ShowLineNumbers = false
 }
 
@@ -203,9 +225,10 @@ func (m *Model) setComponentWidths() {
 		m.setupInputs[i].SetWidth(setupWidth)
 	}
 	m.filterInput.SetWidth(max(1, contentWidth-4))
-	createWidth := min(max(1, m.width), popupWidth(m.width, 78, 56))
-	createInputWidth := max(1, createWidth-10)
+	createWidth := min(max(1, m.width), popupWidth(m.width, 100, 80))
+	createInputWidth := max(1, createWidth-4)
 	m.createSummary.SetWidth(createInputWidth)
+	m.createDescription.SetWidth(createInputWidth)
 	m.reportEditor.SetWidth(max(1, contentWidth-8))
 	m.reportEditor.SetHeight(max(1, m.height-8))
 }
@@ -228,7 +251,7 @@ func (m *Model) visibleIssues() []indexedIssue {
 	filter := strings.ToLower(strings.TrimSpace(m.filterInput.Value()))
 	out := make([]indexedIssue, 0, len(m.issues))
 	for i, issue := range m.issues {
-		if filter == "" || strings.Contains(strings.ToLower(issue.Key+" "+issue.Summary+" "+issue.Status.Name), filter) {
+		if filter == "" || strings.Contains(strings.ToLower(issue.Key+" "+issue.Summary+" "+issue.Description+" "+issue.Status.Name), filter) {
 			out = append(out, indexedIssue{Index: i, Issue: issue})
 		}
 	}
@@ -347,7 +370,7 @@ func cloneFloat(value *float64) *float64 {
 }
 
 func (m *Model) pendingSyncCount() int {
-	return len(m.pendingCreates) + len(m.pendingStatusOriginal) + len(m.pendingPointOriginals)
+	return len(m.pendingCreates) + len(m.pendingStatusOriginal) + len(m.pendingPointOriginals) + len(m.pendingTaskUpdates)
 }
 
 func pointIndex(points *float64) int {

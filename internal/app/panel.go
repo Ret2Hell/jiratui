@@ -16,6 +16,7 @@ type panelSpec struct {
 	Content       string
 	Width, Height int
 	Position      *listPosition
+	Footer        string
 	Scrollbar     *scrollbarState
 }
 
@@ -73,8 +74,12 @@ func (m *Model) renderPanelSpec(spec panelSpec) string {
 		out = append(out, border("│")+" "+padRight(line, innerW)+" "+right)
 	}
 	bottomInside := strings.Repeat("─", w-2)
-	if spec.Position != nil && spec.Position.Total > 0 {
-		meta := formatPosition(*spec.Position)
+	footer := spec.Footer
+	if footer == "" && spec.Position != nil && spec.Position.Total > 0 {
+		footer = formatPosition(*spec.Position)
+	}
+	if footer != "" {
+		meta := footer
 		// Keep a separator border cell on both sides of metadata.
 		if ansiWidth(meta)+2 <= w-2 {
 			left := w - 2 - ansiWidth(meta) - 1

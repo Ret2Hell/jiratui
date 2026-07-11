@@ -60,6 +60,7 @@ type Issue struct {
 	ID          string
 	Key         string
 	Summary     string
+	Description string
 	Status      Status
 	IssueType   IssueType
 	Assignee    *User

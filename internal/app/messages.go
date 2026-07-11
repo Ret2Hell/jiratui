@@ -30,14 +30,18 @@ type taskCreateFailedMsg struct {
 }
 
 type taskUpdatedMsg struct {
-	Key     string
-	Summary string
+	Key         string
+	Summary     string
+	Description string
 }
 
 type taskUpdateFailedMsg struct {
-	Key      string
-	Original string
-	Err      error
+	Key                 string
+	Summary             string
+	Description         string
+	OriginalSummary     string
+	OriginalDescription string
+	Err                 error
 }
 
 type issueTransitionedMsg struct {

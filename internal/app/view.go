@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -256,6 +255,10 @@ func (m *Model) detailsLines(width int) []string {
 	summaryLines := wrapWords(issue.Summary, width)
 	lines := []string{m.styles.Title.Render(issue.Key)}
 	lines = append(lines, summaryLines...)
+	if strings.TrimSpace(issue.Description) != "" {
+		lines = append(lines, "", m.styles.Subtitle.Render("Description"))
+		lines = append(lines, wrapText(issue.Description, width)...)
+	}
 	lines = append(lines, meta...)
 	return lines
 }
@@ -294,72 +297,59 @@ func (m *Model) renderSetup() string {
 }
 
 func (m *Model) renderCreateModal() string {
-	background := m.renderMain()
-	width := popupWidth(m.width, 78, 56)
-	contentWidth := max(1, width-4)
-	body := m.renderCreate(contentWidth)
-	title, description := "New task", "Create a Jira task assigned to you."
-	if m.editingTaskKey != "" {
-		title, description = "Edit task", "Update "+m.editingTaskKey+"."
-	}
-	actions := m.styles.Muted.Render(compactBindingLine(m.activeBindings()))
-	if m.loading {
-		message := firstNonEmpty(m.status, "Creating task")
-		actions = m.spinner.View() + " " + m.styles.Success.Render(message)
-	} else if m.err != nil {
-		actions = m.styles.Error.Render(m.err.Error()) + " " + m.styles.Muted.Render("esc cancel")
-	}
-	content := strings.Join([]string{m.styles.Muted.Render(description), "", body, "", actions}, "\n")
-	height := popupHeight(m.height, lipgloss.Height(content), 8)
-	return m.renderPopupPanel(background, title, content, width, height, nil)
-}
+	background := m.mainBackground()
+	summaryRect, descriptionRect := m.createPopupRects()
+	contentWidth := max(1, summaryRect.Width-4)
 
-func (m *Model) renderCreate(width int) string {
-	return m.renderCreateField(0, "Summary", "", m.createSummary, "What needs to be done?", width)
-}
-
-func (m *Model) renderCreateField(index int, label string, hint string, input textinput.Model, placeholder string, width int) string {
-	focused := m.createFocus == index
-	labelLine := m.renderCreateLabel(index, label, hint, createFieldCount(input.Value()))
-	fieldWidth := max(12, width-4)
-	line := createSingleLineField(input.Value(), input.Position(), placeholder, focused, fieldWidth)
-	line = padRight(line, fieldWidth)
-	if input.Value() == "" {
-		line = m.styles.Muted.Render(line)
+	summary := createSingleLineField(
+		m.createSummary.Value(),
+		m.createSummary.Position(),
+		m.createSummary.Placeholder,
+		m.createFocus == 0,
+		contentWidth,
+	)
+	if m.createSummary.Value() == "" {
+		summary = m.styles.Muted.Render(summary)
 	} else {
-		line = m.styles.HeaderMeta.Render(line)
+		summary = m.styles.HeaderMeta.Render(summary)
 	}
-	border := lipgloss.Color("#334155")
-	if focused {
-		border = lipgloss.Color("#34D399")
-	}
-	box := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(border).
-		Background(lipgloss.Color("#0F172A")).
-		Padding(0, 1).
-		Width(fieldWidth).
-		Render(line)
-	return labelLine + "\n" + box
-}
 
-func (m *Model) renderCreateLabel(index int, label string, hint string, count int) string {
-	marker := "  "
-	if m.createFocus == index {
-		marker = m.styles.Success.Render("› ")
+	m.createDescription.SetWidth(contentWidth)
+	m.createDescription.SetHeight(max(1, descriptionRect.Height-2))
+	title := "New task"
+	if m.editingTaskKey != "" {
+		title = "Edit " + m.editingTaskKey
 	}
-	parts := marker + m.styles.InputLabel.Render(label)
-	if hint != "" {
-		parts += m.styles.Muted.Render(" " + hint)
+	summaryFooter := ""
+	if m.createFocus == 0 {
+		summaryFooter = "enter save  •  esc cancel"
 	}
-	if count > 0 {
-		parts += m.styles.Muted.Render(fmt.Sprintf("  %d chars", count))
+	descriptionFooter := ""
+	if m.createFocus == 1 {
+		descriptionFooter = "ctrl+s save  •  esc cancel"
 	}
-	return parts
+	summaryPanel := m.renderPanelSpec(panelSpec{
+		Title:   title + " · Summary",
+		Active:  m.createFocus == 0,
+		Content: summary,
+		Footer:  summaryFooter,
+		Width:   summaryRect.Width,
+		Height:  summaryRect.Height,
+	})
+	descriptionPanel := m.renderPanelSpec(panelSpec{
+		Title:   "Description",
+		Active:  m.createFocus == 1,
+		Content: m.createDescription.View(),
+		Footer:  descriptionFooter,
+		Width:   descriptionRect.Width,
+		Height:  descriptionRect.Height,
+	})
+	popup := lipgloss.JoinVertical(lipgloss.Left, summaryPanel, descriptionPanel)
+	return overlayCentered(background, popup, m.width, m.height)
 }
 
 func (m *Model) renderReport() string {
-	background := m.renderMain()
+	background := m.mainBackground()
 	width := popupWidth(m.width, 100, 80)
 	height := min(max(10, m.height*3/4), max(8, m.height-2))
 	contentWidth := max(1, width-4)
@@ -499,14 +489,6 @@ func maxLineWidth(lines []string) int {
 	return width
 }
 
-func createFieldCount(value string) int {
-	count := len([]rune(strings.TrimSpace(value)))
-	if count < 40 {
-		return 0
-	}
-	return count
-}
-
 func createSingleLineField(value string, cursorPosition int, placeholder string, focused bool, width int) string {
 	width = max(1, width)
 	value = strings.ReplaceAll(value, "\n", " ")
@@ -572,6 +554,14 @@ func createSingleLineField(value string, cursorPosition int, placeholder string,
 		out.WriteRune('…')
 	}
 	return truncatePlain(out.String(), width)
+}
+
+func wrapText(value string, width int) []string {
+	lines := make([]string, 0)
+	for line := range strings.SplitSeq(strings.ReplaceAll(value, "\r\n", "\n"), "\n") {
+		lines = append(lines, wrapWords(line, width)...)
+	}
+	return lines
 }
 
 func wrapWords(value string, width int) []string {

@@ -6,7 +6,7 @@
 [![Platform](https://img.shields.io/badge/macOS_%7C_Linux_%7C_Windows-supported-lightgrey)](https://github.com/Ret2Hell/jiratui/releases/latest)
 [![License](https://img.shields.io/badge/license-see_LICENSE-green)](LICENSE)
 
-A minimal Jira Cloud TUI for active sprint tickets, task creation and editing, status changes, story points, and IONOS daily report drafts.
+A minimal Jira Cloud TUI for active sprint tickets, task creation and editing with summary and description support, status changes, story points, and IONOS daily report drafts.
 
 ## Installation
 

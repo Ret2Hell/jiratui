@@ -73,11 +73,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recalcTotals()
 		cmds = append(cmds, m.saveCacheCmd())
 	case taskUpdatedMsg:
+		if pending, ok := m.pendingTaskUpdates[msg.Key]; ok {
+			if pending.Desired != (taskContent{Summary: msg.Summary, Description: msg.Description}) {
+				break
+			}
+			delete(m.pendingTaskUpdates, msg.Key)
+		}
+		m.updateIssueContent(msg.Key, msg.Summary, msg.Description)
 		m.err = nil
 		m.status = "Updated " + msg.Key
 		cmds = append(cmds, m.saveCacheCmd())
 	case taskUpdateFailedMsg:
-		m.updateIssueSummary(msg.Key, msg.Original)
+		if pending, ok := m.pendingTaskUpdates[msg.Key]; ok {
+			if pending.Desired != (taskContent{Summary: msg.Summary, Description: msg.Description}) {
+				break
+			}
+			if current, found := m.issueByKey(msg.Key); found && current.Summary == pending.Desired.Summary && current.Description == pending.Desired.Description {
+				m.updateIssueContent(msg.Key, pending.Original.Summary, pending.Original.Description)
+			}
+			delete(m.pendingTaskUpdates, msg.Key)
+		} else {
+			m.updateIssueContent(msg.Key, msg.OriginalSummary, msg.OriginalDescription)
+		}
 		m.err = msg.Err
 		m.status = "Update failed: " + msg.Err.Error()
 		cmds = append(cmds, m.saveCacheCmd())
@@ -196,8 +213,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.updatePaste(msg))
 	}
 
-	if mouse, ok := msg.(tea.MouseClickMsg); ok && m.screen == screenMain {
-		m.updateMouse(mouse)
+	if mouse, ok := msg.(tea.MouseClickMsg); ok {
+		switch m.screen {
+		case screenMain:
+			m.updateMouse(mouse)
+		case screenCreate:
+			m.updateCreateMouse(mouse)
+		}
 	}
 	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
 		switch m.screen {
@@ -225,7 +247,11 @@ func (m *Model) updatePaste(msg tea.Msg) tea.Cmd {
 			m.refreshLocalDraft()
 		}
 	case screenCreate:
-		m.createSummary, cmd = m.createSummary.Update(msg)
+		if m.createFocus == 0 {
+			m.createSummary, cmd = m.createSummary.Update(msg)
+		} else {
+			m.createDescription, cmd = m.createDescription.Update(msg)
+		}
 	case screenPoints:
 		// Story points are selected from fixed Fibonacci chips; paste is ignored.
 	case screenReport:
@@ -418,7 +444,11 @@ func (m *Model) updateCreate(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
 		}
 	}
 	var cmd tea.Cmd
-	m.createSummary, cmd = m.createSummary.Update(msg)
+	if m.createFocus == 0 {
+		m.createSummary, cmd = m.createSummary.Update(msg)
+	} else {
+		m.createDescription, cmd = m.createDescription.Update(msg)
+	}
 	return cmd
 }
 
@@ -462,6 +492,19 @@ func (m *Model) updateReport(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	m.reportEditor, cmd = m.reportEditor.Update(msg)
 	return cmd
+}
+
+func (m *Model) updateCreateMouse(msg tea.MouseClickMsg) {
+	if msg.Button != tea.MouseLeft {
+		return
+	}
+	summaryRect, descriptionRect := m.createPopupRects()
+	switch {
+	case summaryRect.contains(msg.X, msg.Y):
+		m.focusCreate(0)
+	case descriptionRect.contains(msg.X, msg.Y):
+		m.focusCreate(1)
+	}
 }
 
 func (m *Model) updateMouse(msg tea.MouseClickMsg) {
@@ -584,16 +627,23 @@ func (m *Model) setupStageEnd() int {
 	return len(m.setupInputs)
 }
 
-func (m *Model) focusCreate(_ int) {
-	m.createFocus = 0
-	m.createSummary.Focus()
+func (m *Model) focusCreate(next int) {
+	m.createSummary.Blur()
+	m.createDescription.Blur()
+	m.createFocus = (next%2 + 2) % 2
+	if m.createFocus == 0 {
+		m.createSummary.Focus()
+	} else {
+		m.createDescription.Focus()
+	}
 }
 
 func (m *Model) openCreate() {
 	m.editingTaskKey = ""
 	m.editingTaskOriginal = ""
+	m.editingTaskDescription = ""
 	m.createSummary.SetValue("")
-	m.createFocus = 0
+	m.createDescription.SetValue("")
 	m.focusCreate(0)
 	m.screen = screenCreate
 }
@@ -605,8 +655,9 @@ func (m *Model) openEdit() {
 	}
 	m.editingTaskKey = issue.Key
 	m.editingTaskOriginal = issue.Summary
+	m.editingTaskDescription = issue.Description
 	m.createSummary.SetValue(issue.Summary)
-	m.createFocus = 0
+	m.createDescription.SetValue(issue.Description)
 	m.focusCreate(0)
 	m.screen = screenCreate
 }
@@ -665,6 +716,10 @@ func (m *Model) mergeSprintData(remote []jira.Issue) {
 	}
 	for _, issue := range remote {
 		if local, ok := localByKey[issue.Key]; ok {
+			if _, pending := m.pendingTaskUpdates[issue.Key]; pending {
+				issue.Summary = local.Summary
+				issue.Description = local.Description
+			}
 			if _, pending := m.pendingStatusOriginal[issue.Key]; pending {
 				issue.Status = local.Status
 			}
@@ -781,10 +836,11 @@ func (m *Model) updateIssueStatus(key string, status jira.Status) {
 	}
 }
 
-func (m *Model) updateIssueSummary(key, summary string) {
+func (m *Model) updateIssueContent(key, summary, description string) {
 	for i := range m.issues {
 		if m.issues[i].Key == key {
 			m.issues[i].Summary = summary
+			m.issues[i].Description = description
 			m.issues[i].Updated = time.Now()
 			return
 		}

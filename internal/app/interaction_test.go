@@ -27,6 +27,31 @@ func newMainTestModel(t *testing.T, width, height int) *Model {
 	return m
 }
 
+func TestPendingTaskContentSurvivesRefreshAndSuccess(t *testing.T) {
+	m := newMainTestModel(t, 120, 20)
+	key := m.issues[0].Key
+	m.issues[0].Summary = "Optimistic summary"
+	m.issues[0].Description = "Optimistic description"
+	m.pendingTaskUpdates[key] = pendingTaskUpdate{
+		Original: taskContent{Summary: "Old summary", Description: "Old description"},
+		Desired:  taskContent{Summary: "Optimistic summary", Description: "Optimistic description"},
+	}
+	remote := []jira.Issue{{Key: key, Summary: "Stale summary", Description: "Stale description"}}
+	m.mergeSprintData(remote)
+	if m.issues[0].Summary != "Optimistic summary" || m.issues[0].Description != "Optimistic description" {
+		t.Fatalf("refresh replaced pending content: %#v", m.issues[0])
+	}
+
+	m.Update(taskUpdatedMsg{Key: key, Summary: "Optimistic summary", Description: "Optimistic description"})
+	issue, _ := m.issueByKey(key)
+	if issue.Summary != "Optimistic summary" || issue.Description != "Optimistic description" {
+		t.Fatalf("success did not reapply content: %#v", issue)
+	}
+	if _, pending := m.pendingTaskUpdates[key]; pending {
+		t.Fatal("successful update remained pending")
+	}
+}
+
 func TestDetailsNavigationUsesPanelWidth(t *testing.T) {
 	m := newMainTestModel(t, 120, 12)
 	m.focus = focusDetails
