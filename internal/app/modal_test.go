@@ -158,7 +158,7 @@ func TestDeleteTaskConfirmation(t *testing.T) {
 	if top := strings.Split(m.renderDeleteModal(), "\n")[0]; top != backgroundTop {
 		t.Fatalf("delete modal replaced background top row\n got: %q\nwant: %q", top, backgroundTop)
 	}
-	for _, want := range []string{"Delete task", key, "Permanently delete", "enter confirm", "esc cancel"} {
+	for _, want := range []string{"Delete task", key, "permanently", "enter confirm", "esc cancel"} {
 		if !strings.Contains(modal, want) {
 			t.Errorf("delete popup missing %q:\n%s", want, modal)
 		}

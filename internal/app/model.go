@@ -103,7 +103,6 @@ type Model struct {
 	editingTaskOriginal    string
 	editingTaskDescription string
 	deletingTaskKey        string
-	deletingTaskSummary    string
 
 	pointSelected         int
 	pointEditingKey       string

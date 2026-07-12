@@ -354,22 +354,27 @@ func (m *Model) renderCreateModal() string {
 
 func (m *Model) renderDeleteModal() string {
 	background := m.mainBackground()
+	question := "Delete " + m.styles.Title.Render(m.deletingTaskKey) + " permanently?"
+	footer := "enter confirm  •  esc cancel"
 	width := popupWidth(m.width, 72, 48)
 	contentWidth := max(1, width-4)
-	lines := []string{
-		"Permanently delete " + m.styles.Title.Render(m.deletingTaskKey) + "?",
-		m.styles.Muted.Render(truncatePlain(m.deletingTaskSummary, contentWidth)),
-		"",
-	}
+	lines := []string{question}
+	height := 3
 	if m.loading {
-		lines = append(lines, m.spinner.View()+" "+m.styles.Muted.Render("Deleting…"))
+		footer = m.spinner.View() + " " + m.styles.Muted.Render("Deleting…")
 	} else if m.err != nil {
 		lines = append(lines, m.styles.Error.Render(truncatePlain(m.err.Error(), contentWidth)))
-	} else {
-		lines = append(lines, m.styles.Muted.Render("enter confirm  •  esc cancel"))
+		height++
 	}
-	height := popupHeight(m.height, len(lines), 7)
-	return m.renderPopupPanel(background, "Delete task", strings.Join(lines, "\n"), width, height, nil)
+	panel := m.renderPanelSpec(panelSpec{
+		Title:   "Delete task",
+		Active:  true,
+		Content: strings.Join(lines, "\n"),
+		Footer:  footer,
+		Width:   width,
+		Height:  height,
+	})
+	return overlayCentered(background, panel, m.width, m.height)
 }
 
 func (m *Model) renderReport() string {

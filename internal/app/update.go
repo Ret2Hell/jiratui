@@ -81,7 +81,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		delete(m.pendingStatusOriginal, msg.Key)
 		delete(m.localStatusChanges, msg.Key)
 		m.deletingTaskKey = ""
-		m.deletingTaskSummary = ""
 		m.screen = screenMain
 		m.status = "Deleted " + msg.Key
 		m.recalcTotals()
@@ -484,7 +483,6 @@ func (m *Model) updateDelete(key tea.KeyPressMsg) tea.Cmd {
 	case cmdCancel:
 		if !m.loading {
 			m.deletingTaskKey = ""
-			m.deletingTaskSummary = ""
 			m.err = nil
 			m.screen = screenMain
 		}
@@ -710,7 +708,6 @@ func (m *Model) openDelete() {
 		return
 	}
 	m.deletingTaskKey = issue.Key
-	m.deletingTaskSummary = issue.Summary
 	m.err = nil
 	m.screen = screenDelete
 }
