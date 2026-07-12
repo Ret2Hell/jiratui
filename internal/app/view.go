@@ -361,7 +361,7 @@ func (m *Model) renderDeleteModal() string {
 	lines := []string{question}
 	height := 3
 	if m.loading {
-		footer = m.spinner.View() + " " + m.styles.Muted.Render("Deleting…")
+		footer = m.spinner.View() + " " + m.styles.Muted.Render("Deleting")
 	} else if m.err != nil {
 		lines = append(lines, m.styles.Error.Render(truncatePlain(m.err.Error(), contentWidth)))
 		height++
