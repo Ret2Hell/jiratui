@@ -206,8 +206,8 @@ func TestReportModalUsesSameOverlayBehavior(t *testing.T) {
 		t.Fatalf("report modal replaced background top row\n got: %q\nwant: %q", top, backgroundTop)
 	}
 	plain := ansi.Strip(modal)
-	if !strings.Contains(plain, "Daily Report") || !strings.Contains(plain, "Save: ctrl+s | Cancel: esc") {
-		t.Fatalf("report popup missing shared modal chrome/actions:\n%s", plain)
+	if !strings.Contains(plain, "Daily Report") || !strings.Contains(plain, "ctrl+s save  •  esc cancel") {
+		t.Fatalf("report popup missing bottom-border actions:\n%s", plain)
 	}
 }
 

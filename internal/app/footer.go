@@ -1,10 +1,6 @@
 package app
 
-import (
-	"strings"
-
-	"github.com/charmbracelet/x/ansi"
-)
+import "github.com/charmbracelet/x/ansi"
 
 func (m *Model) renderBindingFooter() string {
 	return m.bindingFooterLine(max(0, m.width))
@@ -42,14 +38,4 @@ func (m *Model) bindingFooterLine(width int) string {
 		break
 	}
 	return padRight(truncatePlain(line, width), width)
-}
-
-func compactBindingLine(bindings []binding) string {
-	parts := make([]string, 0, len(bindings))
-	for _, b := range bindings {
-		if b.Footer {
-			parts = append(parts, b.Short+": "+bindingDisplayKey(b))
-		}
-	}
-	return strings.Join(parts, " | ")
 }

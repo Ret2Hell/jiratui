@@ -382,17 +382,23 @@ func (m *Model) renderReport() string {
 	width := popupWidth(m.width, 100, 80)
 	height := min(max(10, m.height*3/4), max(8, m.height-2))
 	contentWidth := max(1, width-4)
-	editorHeight := max(1, height-6)
 	m.reportEditor.SetWidth(contentWidth)
-	m.reportEditor.SetHeight(editorHeight)
-	actions := m.styles.Muted.Render(compactBindingLine(m.activeBindings()))
-	content := strings.Join([]string{
-		"",
-		m.reportEditor.View(),
-		"",
-		actions,
-	}, "\n")
-	return m.renderPopupPanel(background, "Daily Report", content, width, height, nil)
+	m.reportEditor.SetHeight(max(1, height-2))
+	footer := "ctrl+s save  •  esc cancel"
+	if m.loading {
+		footer = m.spinner.View() + " " + m.styles.Muted.Render("Saving…")
+	} else if m.err != nil {
+		footer = m.styles.Error.Render(truncatePlain(m.err.Error(), contentWidth)) + "  " + m.styles.Muted.Render("esc cancel")
+	}
+	panel := m.renderPanelSpec(panelSpec{
+		Title:   "Daily Report",
+		Active:  true,
+		Content: m.reportEditor.View(),
+		Footer:  footer,
+		Width:   width,
+		Height:  height,
+	})
+	return overlayCentered(background, panel, m.width, m.height)
 }
 
 func (m *Model) showFilterLine() bool {
