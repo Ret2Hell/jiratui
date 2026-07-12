@@ -400,15 +400,56 @@ func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
 func (m *Model) openKeybindingsModal() {
 	m.modalParent = m.screen
 	m.keybindingsViewport.Offset = 0
+	m.keybindingsSelected = 0
+	m.keybindingsFilter = ""
+	m.keybindingsFiltering = false
 	m.screen = screenHelp
 }
 
 func (m *Model) updateKeybindingsModal(key tea.KeyPressMsg) tea.Cmd {
-	binding, ok := bindingForKey(m.activeBindings(), key.Keystroke())
+	stroke := key.Keystroke()
+	if m.keybindingsFiltering {
+		switch stroke {
+		case "esc":
+			m.keybindingsFiltering = false
+			m.keybindingsFilter = ""
+		case "enter":
+			m.keybindingsFiltering = false
+			item, ok := m.selectedKeybinding()
+			if ok && len(item.Keys) > 0 {
+				return m.runKeybindingMenuItem(item)
+			}
+		case "backspace":
+			runes := []rune(m.keybindingsFilter)
+			if len(runes) > 0 {
+				m.keybindingsFilter = string(runes[:len(runes)-1])
+			}
+		default:
+			if key.Text != "" {
+				m.keybindingsFilter += key.Text
+			}
+		}
+		m.keybindingsSelected = 0
+		m.keybindingsViewport.Offset = 0
+		return nil
+	}
+	if stroke == "/" {
+		m.keybindingsFiltering = true
+		return nil
+	}
+	if stroke == "enter" {
+		item, ok := m.selectedKeybinding()
+		if !ok || len(item.Keys) == 0 {
+			return nil
+		}
+		return m.runKeybindingMenuItem(item)
+	}
+	binding, ok := bindingForKey(m.activeBindings(), stroke)
 	if !ok {
 		return nil
 	}
-	lineCount, pageSize := m.keybindingsModalMetrics()
+	count := m.selectableKeybindingCount()
+	_, pageSize := m.keybindingsModalMetrics()
 	switch binding.Command {
 	case cmdCancel:
 		m.screen = m.modalParent
@@ -416,19 +457,85 @@ func (m *Model) updateKeybindingsModal(key tea.KeyPressMsg) tea.Cmd {
 			m.screen = screenMain
 		}
 	case cmdUp:
-		m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset-1, lineCount, pageSize)
+		m.keybindingsSelected = max(0, m.keybindingsSelected-1)
 	case cmdDown:
-		m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset+1, lineCount, pageSize)
+		m.keybindingsSelected = min(max(0, count-1), m.keybindingsSelected+1)
 	case cmdPageUp:
-		m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset-pageSize, lineCount, pageSize)
+		m.keybindingsSelected = max(0, m.keybindingsSelected-pageSize)
 	case cmdPageDown:
-		m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset+pageSize, lineCount, pageSize)
+		m.keybindingsSelected = min(max(0, count-1), m.keybindingsSelected+pageSize)
 	case cmdHome:
-		m.keybindingsViewport.Offset = 0
+		m.keybindingsSelected = 0
 	case cmdEnd:
-		m.keybindingsViewport.Offset = clampOffset(lineCount, lineCount, pageSize)
+		m.keybindingsSelected = max(0, count-1)
 	}
 	return nil
+}
+
+func (m *Model) runKeybindingMenuItem(item binding) tea.Cmd {
+	parent := m.modalParent
+	m.screen = parent
+	key := keyPressForBinding(item.Keys[0])
+	switch parent {
+	case screenSetup:
+		return m.updateSetup(key)
+	case screenCreate:
+		return m.updateCreate(key, key)
+	case screenDelete:
+		return m.updateDelete(key)
+	case screenPoints:
+		return m.updatePoints(key, key)
+	case screenReport:
+		return m.updateReport(key, key)
+	default:
+		return m.updateMain(key)
+	}
+}
+
+func keyPressForBinding(value string) tea.KeyPressMsg {
+	key := tea.Key{}
+	switch value {
+	case "enter":
+		key.Code = tea.KeyEnter
+	case "esc":
+		key.Code = tea.KeyEscape
+	case "tab":
+		key.Code = tea.KeyTab
+	case "shift+tab":
+		key.Code, key.Mod = tea.KeyTab, tea.ModShift
+	case "up":
+		key.Code = tea.KeyUp
+	case "down":
+		key.Code = tea.KeyDown
+	case "left":
+		key.Code = tea.KeyLeft
+	case "right":
+		key.Code = tea.KeyRight
+	case "pgup":
+		key.Code = tea.KeyPgUp
+	case "pgdown":
+		key.Code = tea.KeyPgDown
+	case "home":
+		key.Code = tea.KeyHome
+	case "end":
+		key.Code = tea.KeyEnd
+	default:
+		parts := strings.Split(value, "+")
+		character := parts[len(parts)-1]
+		if len(parts) > 1 {
+			switch parts[0] {
+			case "ctrl":
+				key.Mod = tea.ModCtrl
+			case "shift":
+				key.Mod = tea.ModShift
+			}
+		}
+		if runes := []rune(character); len(runes) > 0 {
+			key.Code = runes[0]
+			key.Text = character
+		}
+	}
+	return tea.KeyPressMsg(key)
 }
 
 func (m *Model) scrollKeybindingsModal(msg tea.MouseWheelMsg) {
@@ -441,8 +548,8 @@ func (m *Model) scrollKeybindingsModal(msg tea.MouseWheelMsg) {
 	default:
 		return
 	}
-	lineCount, pageSize := m.keybindingsModalMetrics()
-	m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset+delta, lineCount, pageSize)
+	count := m.selectableKeybindingCount()
+	m.keybindingsSelected = min(max(0, count-1), max(0, m.keybindingsSelected+delta))
 }
 
 func (m *Model) updateCreate(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
@@ -511,7 +618,10 @@ func (m *Model) updatePoints(key tea.KeyPressMsg, _ tea.Msg) tea.Cmd {
 			m.movePointSelection(1)
 		}
 	case cmdSelect:
-		m.pointSelected = int(key.Keystroke()[0] - '0')
+		m.pointSelected = int(key.Keystroke()[0]-'0') + 1
+		m.applyPointSelection()
+	case cmdClear:
+		m.pointSelected = 0
 		m.applyPointSelection()
 	}
 	return nil
@@ -727,9 +837,9 @@ func (m *Model) openPoints() {
 func (m *Model) movePointSelection(delta int) {
 	m.pointSelected += delta
 	if m.pointSelected < 0 {
-		m.pointSelected = len(storyPointValues()) - 1
+		m.pointSelected = len(storyPointValues())
 	}
-	if m.pointSelected >= len(storyPointValues()) {
+	if m.pointSelected > len(storyPointValues()) {
 		m.pointSelected = 0
 	}
 	m.applyPointSelection()

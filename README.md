@@ -70,6 +70,8 @@ jiratui --setup
 
 ## Keybindings
 
+Press `?` to open the contextual keybindings menu. Use `↑`/`↓` to select an action, `/` to filter, `enter` to run it, and `esc` to close.
+
 | Key | Action |
 | --- | --- |
 | `q` | quit |
@@ -85,6 +87,7 @@ jiratui --setup
 | `e` / `R` | edit selected task |
 | `D` | delete selected task after confirmation |
 | `enter` | set story points |
+| `u` / `c` | mark story points as unestimated while editing |
 | `t` | move to To Do |
 | `p` / `i` | move to In Progress |
 | `x` / `d` | move to Done |

@@ -31,6 +31,7 @@ const (
 	cmdCancel   commandID = "cancel"
 	cmdChange   commandID = "change"
 	cmdSelect   commandID = "select"
+	cmdClear    commandID = "clear"
 )
 
 type binding struct {
@@ -89,15 +90,9 @@ func pointsBindings() []binding {
 	return []binding{
 		{cmdChange, []string{"left", "right", "up", "down", "h", "j", "k", "l"}, "change story points", "Change", true, 10},
 		{cmdSelect, []string{"0", "1", "2", "3", "4", "5", "6"}, "select a story-point value", "Select", true, 10},
+		{cmdClear, []string{"u", "c"}, "set story points to unestimated", "Unestimated", true, 10},
 		{cmdSave, []string{"enter"}, "save story points", "Save", true, 10},
 		{cmdCancel, []string{"esc"}, "close without saving", "Cancel", true, 10},
-	}
-}
-
-func filterBindings() []binding {
-	return []binding{
-		{cmdSave, []string{"enter"}, "apply the filter", "Apply", true, 10},
-		{cmdCancel, []string{"esc"}, "clear and close the filter", "Clear", true, 10},
 	}
 }
 
@@ -159,22 +154,6 @@ func (m *Model) activeBindings() []binding {
 		})
 	}
 	return bindings
-}
-
-func allBindingGroups() []bindingGroup {
-	main := mainBindings()
-	return []bindingGroup{
-		{Title: "Tasks", Bindings: bindingsForCommands(main, cmdNew, cmdEdit, cmdDelete, cmdPoints, cmdReport)},
-		{Title: "Workflow", Bindings: bindingsForCommands(main, cmdTodo, cmdProgress, cmdDone)},
-		{Title: "Navigation", Bindings: bindingsForCommands(main, cmdUp, cmdDown, cmdPageUp, cmdPageDown, cmdHome, cmdEnd, cmdFocus)},
-		{Title: "View", Bindings: bindingsForCommands(main, cmdFilter, cmdRefresh)},
-		{Title: "Filter mode", Bindings: filterBindings()},
-		{Title: "Story points", Bindings: pointsBindings()},
-		{Title: "Forms and dialogs", Bindings: append(append(createBindings(), deleteBindings()...), reportBindings()...)},
-		{Title: "Setup", Bindings: setupBindings("continue or save setup")},
-		{Title: "Keybindings popup", Bindings: keybindingsModalBindings()},
-		{Title: "Application", Bindings: bindingsForCommands(main, cmdHelp, cmdQuit)},
-	}
 }
 
 func bindingsForCommands(bindings []binding, commands ...commandID) []binding {
