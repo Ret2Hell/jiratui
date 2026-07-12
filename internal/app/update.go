@@ -511,7 +511,10 @@ func (m *Model) updatePoints(key tea.KeyPressMsg, _ tea.Msg) tea.Cmd {
 			m.movePointSelection(1)
 		}
 	case cmdSelect:
-		m.pointSelected = int(key.Keystroke()[0] - '0')
+		m.pointSelected = int(key.Keystroke()[0]-'0') + 1
+		m.applyPointSelection()
+	case cmdClear:
+		m.pointSelected = 0
 		m.applyPointSelection()
 	}
 	return nil
@@ -727,9 +730,9 @@ func (m *Model) openPoints() {
 func (m *Model) movePointSelection(delta int) {
 	m.pointSelected += delta
 	if m.pointSelected < 0 {
-		m.pointSelected = len(storyPointValues()) - 1
+		m.pointSelected = len(storyPointValues())
 	}
-	if m.pointSelected >= len(storyPointValues()) {
+	if m.pointSelected > len(storyPointValues()) {
 		m.pointSelected = 0
 	}
 	m.applyPointSelection()

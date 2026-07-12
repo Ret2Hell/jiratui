@@ -85,6 +85,7 @@ jiratui --setup
 | `e` / `R` | edit selected task |
 | `D` | delete selected task after confirmation |
 | `enter` | set story points |
+| `u` | mark story points as unestimated while editing |
 | `t` | move to To Do |
 | `p` / `i` | move to In Progress |
 | `x` / `d` | move to Done |

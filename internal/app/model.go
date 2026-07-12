@@ -359,8 +359,11 @@ func storyPointValues() []float64 {
 }
 
 func selectedStoryPoints(index int) *float64 {
+	if index <= 0 {
+		return nil
+	}
 	values := storyPointValues()
-	index = min(max(0, index), len(values)-1)
+	index = min(index-1, len(values)-1)
 	return new(values[index])
 }
 
@@ -389,12 +392,12 @@ func pointIndex(points *float64) int {
 			closestDistance = distance
 		}
 	}
-	return closest
+	return closest + 1
 }
 
 func pointsString(points *float64) string {
 	if points == nil {
-		return "-"
+		return "—"
 	}
 	return pointValueString(*points)
 }

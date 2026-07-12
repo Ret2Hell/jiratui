@@ -251,7 +251,7 @@ func (m *Model) detailsLines(width int) []string {
 		fmt.Sprintf("Type:   %s", issue.IssueType.Name),
 	}
 	if m.screen == screenPoints {
-		meta = append(meta, "", m.styles.Success.Render("Editing story points"), m.styles.Muted.Render("←/→ or ↑/↓ change · enter save · esc cancel"))
+		meta = append(meta, "", m.styles.Success.Render("Editing story points"), m.styles.Muted.Render("←/→ or ↑/↓ change · u unestimated · enter save · esc cancel"))
 	}
 	if issue.Assignee != nil {
 		meta = append(meta, fmt.Sprintf("Assignee: %s", issue.Assignee.DisplayName))
