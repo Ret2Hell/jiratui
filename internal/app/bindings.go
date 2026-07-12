@@ -14,6 +14,7 @@ const (
 	cmdFilter   commandID = "filter"
 	cmdNew      commandID = "new"
 	cmdEdit     commandID = "edit"
+	cmdDelete   commandID = "delete"
 	cmdPoints   commandID = "points"
 	cmdTodo     commandID = "todo"
 	cmdProgress commandID = "progress"
@@ -49,6 +50,7 @@ func mainBindings() []binding {
 	return []binding{
 		{cmdNew, []string{"n"}, "create a new task", "Create", true, 8},
 		{cmdEdit, []string{"e", "shift+r"}, "edit the selected task", "Edit", false, 8},
+		{cmdDelete, []string{"shift+d"}, "delete the selected task", "Delete", false, 8},
 		{cmdPoints, []string{"enter"}, "set story points", "Story points", true, 8},
 		{cmdTodo, []string{"t"}, "move to To Do", "To Do", true, 6},
 		{cmdProgress, []string{"p", "i"}, "move to In Progress", "In Progress", true, 6},
@@ -73,6 +75,13 @@ func createBindings() []binding {
 		{cmdSave, []string{"enter", "ctrl+s"}, "create or save the task", "Save", true, 10},
 		{cmdFocus, []string{"tab", "shift+tab"}, "move between fields", "Fields", false, 5},
 		{cmdCancel, []string{"esc"}, "close without saving", "Cancel", true, 10},
+	}
+}
+
+func deleteBindings() []binding {
+	return []binding{
+		{cmdSave, []string{"enter"}, "confirm task deletion", "Delete", true, 10},
+		{cmdCancel, []string{"esc"}, "cancel task deletion", "Cancel", true, 10},
 	}
 }
 
@@ -127,6 +136,8 @@ func (m *Model) activeBindings() []binding {
 			bindings[0].Keys = []string{"ctrl+s"}
 		}
 		return bindings
+	case screenDelete:
+		return deleteBindings()
 	case screenPoints:
 		return pointsBindings()
 	case screenReport:
@@ -144,7 +155,7 @@ func (m *Model) activeBindings() []binding {
 	bindings := mainBindings()
 	if len(m.visibleIssues()) == 0 {
 		bindings = slices.DeleteFunc(bindings, func(item binding) bool {
-			return slices.Contains([]commandID{cmdEdit, cmdPoints, cmdTodo, cmdProgress, cmdDone}, item.Command)
+			return slices.Contains([]commandID{cmdEdit, cmdDelete, cmdPoints, cmdTodo, cmdProgress, cmdDone}, item.Command)
 		})
 	}
 	return bindings
@@ -153,13 +164,13 @@ func (m *Model) activeBindings() []binding {
 func allBindingGroups() []bindingGroup {
 	main := mainBindings()
 	return []bindingGroup{
-		{Title: "Tasks", Bindings: bindingsForCommands(main, cmdNew, cmdEdit, cmdPoints, cmdReport)},
+		{Title: "Tasks", Bindings: bindingsForCommands(main, cmdNew, cmdEdit, cmdDelete, cmdPoints, cmdReport)},
 		{Title: "Workflow", Bindings: bindingsForCommands(main, cmdTodo, cmdProgress, cmdDone)},
 		{Title: "Navigation", Bindings: bindingsForCommands(main, cmdUp, cmdDown, cmdPageUp, cmdPageDown, cmdHome, cmdEnd, cmdFocus)},
 		{Title: "View", Bindings: bindingsForCommands(main, cmdFilter, cmdRefresh)},
 		{Title: "Filter mode", Bindings: filterBindings()},
 		{Title: "Story points", Bindings: pointsBindings()},
-		{Title: "Forms and dialogs", Bindings: append(createBindings(), reportBindings()...)},
+		{Title: "Forms and dialogs", Bindings: append(append(createBindings(), deleteBindings()...), reportBindings()...)},
 		{Title: "Setup", Bindings: setupBindings("continue or save setup")},
 		{Title: "Keybindings popup", Bindings: keybindingsModalBindings()},
 		{Title: "Application", Bindings: bindingsForCommands(main, cmdHelp, cmdQuit)},
@@ -208,6 +219,8 @@ func keyLabel(key string) string {
 		return "R"
 	case "shift+m":
 		return "M"
+	case "shift+d":
+		return "D"
 	case "shift+g":
 		return "G"
 	default:

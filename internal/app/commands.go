@@ -144,6 +144,24 @@ func (m *Model) updateTaskCmd() tea.Cmd {
 	})
 }
 
+func (m *Model) deleteTaskCmd() tea.Cmd {
+	if m.service == nil || m.deletingTaskKey == "" || m.loading {
+		return nil
+	}
+	key := m.deletingTaskKey
+	m.loading = true
+	m.err = nil
+	m.status = "Deleting " + key
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := m.service.DeleteTask(ctx, key); err != nil {
+			return taskDeleteFailedMsg{Key: key, Err: err}
+		}
+		return taskDeletedMsg{Key: key}
+	}
+}
+
 func (m *Model) quickMoveCmd(target string) tea.Cmd {
 	issue, ok := m.selectedIssue()
 	if !ok || m.service == nil {

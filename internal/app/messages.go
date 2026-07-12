@@ -35,6 +35,15 @@ type taskUpdatedMsg struct {
 	Description string
 }
 
+type taskDeletedMsg struct {
+	Key string
+}
+
+type taskDeleteFailedMsg struct {
+	Key string
+	Err error
+}
+
 type taskUpdateFailedMsg struct {
 	Key                 string
 	Summary             string

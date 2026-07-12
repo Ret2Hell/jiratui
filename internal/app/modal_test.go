@@ -1,11 +1,15 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/Ret2Hell/jiratui/internal/service"
 )
 
 func TestMainFooterShowsOnlyPrimaryContextActions(t *testing.T) {
@@ -16,7 +20,7 @@ func TestMainFooterShowsOnlyPrimaryContextActions(t *testing.T) {
 			t.Errorf("footer %q missing %q", footer, want)
 		}
 	}
-	for _, unwanted := range []string{"Edit: e", "Daily report", "Refresh", "Quit"} {
+	for _, unwanted := range []string{"Edit: e", "Delete: D", "Daily report", "Refresh", "Quit"} {
 		if strings.Contains(footer, unwanted) {
 			t.Errorf("footer %q unexpectedly contains %q", footer, unwanted)
 		}
@@ -31,7 +35,7 @@ func TestKeybindingsAreLogicallyGrouped(t *testing.T) {
 			t.Errorf("keybindings missing heading %q", heading)
 		}
 	}
-	for _, action := range []string{"create a new task", "move to In Progress", "move one page down", "save the report draft", "show all keybindings"} {
+	for _, action := range []string{"create a new task", "delete the selected task", "move to In Progress", "move one page down", "save the report draft", "show all keybindings"} {
 		if !strings.Contains(lines, action) {
 			t.Errorf("keybindings missing action %q", action)
 		}
@@ -128,6 +132,68 @@ func TestDetailsRenderDescription(t *testing.T) {
 	}
 }
 
+type deleteTestService struct {
+	service.Service
+	deleted string
+	err     error
+}
+
+func (s *deleteTestService) DeleteTask(_ context.Context, key string) error {
+	s.deleted = key
+	return s.err
+}
+
+func TestDeleteTaskConfirmation(t *testing.T) {
+	m := newMainTestModel(t, 120, 30)
+	svc := &deleteTestService{}
+	m.service = svc
+	key := m.issues[0].Key
+	backgroundTop := strings.Split(m.renderMain(), "\n")[0]
+
+	m.openDelete()
+	if m.screen != screenDelete || m.deletingTaskKey != key {
+		t.Fatalf("delete popup state = %v / %q", m.screen, m.deletingTaskKey)
+	}
+	modal := ansi.Strip(m.renderDeleteModal())
+	if top := strings.Split(m.renderDeleteModal(), "\n")[0]; top != backgroundTop {
+		t.Fatalf("delete modal replaced background top row\n got: %q\nwant: %q", top, backgroundTop)
+	}
+	for _, want := range []string{"Delete task", key, "permanently", "enter confirm", "esc cancel"} {
+		if !strings.Contains(modal, want) {
+			t.Errorf("delete popup missing %q:\n%s", want, modal)
+		}
+	}
+
+	m.updateDelete(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	if m.screen != screenMain {
+		t.Fatal("escape did not cancel deletion")
+	}
+	m.openDelete()
+	cmd := m.updateDelete(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if cmd == nil {
+		t.Fatal("confirm did not start deletion")
+	}
+	msg := cmd()
+	if svc.deleted != key {
+		t.Fatalf("deleted key = %q, want %q", svc.deleted, key)
+	}
+	m.Update(msg)
+	if _, ok := m.issueByKey(key); ok || m.screen != screenMain {
+		t.Fatalf("successful deletion retained issue or popup: screen=%v", m.screen)
+	}
+}
+
+func TestDeleteTaskFailureKeepsConfirmationOpen(t *testing.T) {
+	m := newMainTestModel(t, 120, 30)
+	m.service = &deleteTestService{err: errors.New("permission denied")}
+	m.openDelete()
+	cmd := m.deleteTaskCmd()
+	m.Update(cmd())
+	if m.screen != screenDelete || m.loading || m.err == nil {
+		t.Fatalf("failed delete state: screen=%v loading=%v err=%v", m.screen, m.loading, m.err)
+	}
+}
+
 func TestReportModalUsesSameOverlayBehavior(t *testing.T) {
 	m := newMainTestModel(t, 120, 30)
 	backgroundTop := strings.Split(m.renderMain(), "\n")[0]
@@ -140,8 +206,8 @@ func TestReportModalUsesSameOverlayBehavior(t *testing.T) {
 		t.Fatalf("report modal replaced background top row\n got: %q\nwant: %q", top, backgroundTop)
 	}
 	plain := ansi.Strip(modal)
-	if !strings.Contains(plain, "Daily Report") || !strings.Contains(plain, "Save: ctrl+s | Cancel: esc") {
-		t.Fatalf("report popup missing shared modal chrome/actions:\n%s", plain)
+	if !strings.Contains(plain, "Daily Report") || !strings.Contains(plain, "ctrl+s save  •  esc cancel") {
+		t.Fatalf("report popup missing bottom-border actions:\n%s", plain)
 	}
 }
 

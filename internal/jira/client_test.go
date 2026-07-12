@@ -160,6 +160,24 @@ func TestClientUpdatesSummaryAndDescription(t *testing.T) {
 	}
 }
 
+func TestClientDeletesTask(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/rest/api/3/issue/TEST-1" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "user@example.com", "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.DeleteTask(t.Context(), "TEST-1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assertIssueType(t *testing.T, got, want IssueType) {
 	t.Helper()
 	if got != want {

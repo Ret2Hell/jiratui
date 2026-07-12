@@ -83,6 +83,7 @@ jiratui --setup
 | Mouse wheel | scroll the panel under the pointer |
 | `n` | create task |
 | `e` / `R` | edit selected task |
+| `D` | delete selected task after confirmation |
 | `enter` | set story points |
 | `t` | move to To Do |
 | `p` / `i` | move to In Progress |
