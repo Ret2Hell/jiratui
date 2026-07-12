@@ -24,6 +24,7 @@ const (
 	screenSetup screen = iota
 	screenMain
 	screenCreate
+	screenDelete
 	screenPoints
 	screenReport
 	screenHelp
@@ -76,16 +77,19 @@ type Model struct {
 	status              string
 	err                 error
 
-	projectName         string
-	sprint              jira.Sprint
-	issues              []jira.Issue
-	selected            int
-	ticketViewport      listViewport
-	detailsViewport     listViewport
-	keybindingsViewport listViewport
-	modalParent         screen
-	tempIssueSeq        int
-	totals              report.PointTotals
+	projectName          string
+	sprint               jira.Sprint
+	issues               []jira.Issue
+	selected             int
+	ticketViewport       listViewport
+	detailsViewport      listViewport
+	keybindingsViewport  listViewport
+	keybindingsSelected  int
+	keybindingsFilter    string
+	keybindingsFiltering bool
+	modalParent          screen
+	tempIssueSeq         int
+	totals               report.PointTotals
 
 	filtering   bool
 	filterInput textinput.Model
@@ -101,6 +105,7 @@ type Model struct {
 	editingTaskKey         string
 	editingTaskOriginal    string
 	editingTaskDescription string
+	deletingTaskKey        string
 
 	pointSelected         int
 	pointEditingKey       string
@@ -357,8 +362,11 @@ func storyPointValues() []float64 {
 }
 
 func selectedStoryPoints(index int) *float64 {
+	if index <= 0 {
+		return nil
+	}
 	values := storyPointValues()
-	index = min(max(0, index), len(values)-1)
+	index = min(index-1, len(values)-1)
 	return new(values[index])
 }
 
@@ -387,12 +395,12 @@ func pointIndex(points *float64) int {
 			closestDistance = distance
 		}
 	}
-	return closest
+	return closest + 1
 }
 
 func pointsString(points *float64) string {
 	if points == nil {
-		return "-"
+		return "—"
 	}
 	return pointValueString(*points)
 }

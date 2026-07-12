@@ -24,6 +24,8 @@ func (m *Model) View() tea.View {
 			content = m.renderSetup()
 		case screenCreate:
 			content = m.renderCreateModal()
+		case screenDelete:
+			content = m.renderDeleteModal()
 		case screenPoints:
 			content = m.renderMain()
 		case screenReport:
@@ -53,6 +55,8 @@ func (m *Model) minimumScreenSize() (int, int) {
 		return 40, 12
 	case screenCreate:
 		return 40, 12
+	case screenDelete:
+		return 30, 8
 	case screenReport:
 		return 40, 10
 	case screenHelp:
@@ -247,7 +251,7 @@ func (m *Model) detailsLines(width int) []string {
 		fmt.Sprintf("Type:   %s", issue.IssueType.Name),
 	}
 	if m.screen == screenPoints {
-		meta = append(meta, "", m.styles.Success.Render("Editing story points"), m.styles.Muted.Render("←/→ or ↑/↓ change · enter save · esc cancel"))
+		meta = append(meta, "", m.styles.Success.Render("Editing story points"), m.styles.Muted.Render("←/→ or ↑/↓ change · u unestimated · enter save · esc cancel"))
 	}
 	if issue.Assignee != nil {
 		meta = append(meta, fmt.Sprintf("Assignee: %s", issue.Assignee.DisplayName))
@@ -348,22 +352,53 @@ func (m *Model) renderCreateModal() string {
 	return overlayCentered(background, popup, m.width, m.height)
 }
 
+func (m *Model) renderDeleteModal() string {
+	background := m.mainBackground()
+	question := "Delete " + m.styles.Title.Render(m.deletingTaskKey) + " permanently?"
+	footer := "enter confirm  •  esc cancel"
+	width := popupWidth(m.width, 72, 48)
+	contentWidth := max(1, width-4)
+	lines := []string{question}
+	height := 3
+	if m.loading {
+		footer = m.spinner.View() + " " + m.styles.Muted.Render("Deleting")
+	} else if m.err != nil {
+		lines = append(lines, m.styles.Error.Render(truncatePlain(m.err.Error(), contentWidth)))
+		height++
+	}
+	panel := m.renderPanelSpec(panelSpec{
+		Title:   "Delete task",
+		Active:  true,
+		Content: strings.Join(lines, "\n"),
+		Footer:  footer,
+		Width:   width,
+		Height:  height,
+	})
+	return overlayCentered(background, panel, m.width, m.height)
+}
+
 func (m *Model) renderReport() string {
 	background := m.mainBackground()
 	width := popupWidth(m.width, 100, 80)
 	height := min(max(10, m.height*3/4), max(8, m.height-2))
 	contentWidth := max(1, width-4)
-	editorHeight := max(1, height-6)
 	m.reportEditor.SetWidth(contentWidth)
-	m.reportEditor.SetHeight(editorHeight)
-	actions := m.styles.Muted.Render(compactBindingLine(m.activeBindings()))
-	content := strings.Join([]string{
-		"",
-		m.reportEditor.View(),
-		"",
-		actions,
-	}, "\n")
-	return m.renderPopupPanel(background, "Daily Report", content, width, height, nil)
+	m.reportEditor.SetHeight(max(1, height-2))
+	footer := "ctrl+s save  •  esc cancel"
+	if m.loading {
+		footer = m.spinner.View() + " " + m.styles.Muted.Render("Saving…")
+	} else if m.err != nil {
+		footer = m.styles.Error.Render(truncatePlain(m.err.Error(), contentWidth)) + "  " + m.styles.Muted.Render("esc cancel")
+	}
+	panel := m.renderPanelSpec(panelSpec{
+		Title:   "Daily Report",
+		Active:  true,
+		Content: m.reportEditor.View(),
+		Footer:  footer,
+		Width:   width,
+		Height:  height,
+	})
+	return overlayCentered(background, panel, m.width, m.height)
 }
 
 func (m *Model) showFilterLine() bool {

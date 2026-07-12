@@ -1,11 +1,15 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/Ret2Hell/jiratui/internal/service"
 )
 
 func TestMainFooterShowsOnlyPrimaryContextActions(t *testing.T) {
@@ -16,7 +20,7 @@ func TestMainFooterShowsOnlyPrimaryContextActions(t *testing.T) {
 			t.Errorf("footer %q missing %q", footer, want)
 		}
 	}
-	for _, unwanted := range []string{"Edit: e", "Daily report", "Refresh", "Quit"} {
+	for _, unwanted := range []string{"Edit: e", "Delete: D", "Daily report", "Refresh", "Quit"} {
 		if strings.Contains(footer, unwanted) {
 			t.Errorf("footer %q unexpectedly contains %q", footer, unwanted)
 		}
@@ -25,13 +29,14 @@ func TestMainFooterShowsOnlyPrimaryContextActions(t *testing.T) {
 
 func TestKeybindingsAreLogicallyGrouped(t *testing.T) {
 	m := newMainTestModel(t, 120, 40)
+	m.modalParent = screenMain
 	lines := ansi.Strip(strings.Join(m.keybindingLines(80), "\n"))
-	for _, heading := range []string{"--- Tasks ---", "--- Workflow ---", "--- Navigation ---", "--- View ---", "--- Filter mode ---", "--- Story points ---", "--- Forms and dialogs ---", "--- Setup ---", "--- Keybindings popup ---", "--- Application ---"} {
+	for _, heading := range []string{"Tasks", "Workflow", "View", "Navigation", "Application"} {
 		if !strings.Contains(lines, heading) {
 			t.Errorf("keybindings missing heading %q", heading)
 		}
 	}
-	for _, action := range []string{"create a new task", "move to In Progress", "move one page down", "save the report draft", "show all keybindings"} {
+	for _, action := range []string{"create a new task", "delete the selected task", "move to In Progress", "move one page down", "open daily report", "show all keybindings"} {
 		if !strings.Contains(lines, action) {
 			t.Errorf("keybindings missing action %q", action)
 		}
@@ -50,7 +55,7 @@ func TestKeybindingsModalOverlaysCurrentScreen(t *testing.T) {
 		t.Fatalf("modal replaced background top row\n got: %q\nwant: %q", top, backgroundTop)
 	}
 	plain := ansi.Strip(modal)
-	if !strings.Contains(plain, "Keybindings") || !strings.Contains(plain, "--- Tasks ---") {
+	if !strings.Contains(plain, "Keybindings") || !strings.Contains(plain, "Tasks") {
 		t.Fatalf("keybindings popup not rendered over background:\n%s", plain)
 	}
 }
@@ -128,6 +133,68 @@ func TestDetailsRenderDescription(t *testing.T) {
 	}
 }
 
+type deleteTestService struct {
+	service.Service
+	deleted string
+	err     error
+}
+
+func (s *deleteTestService) DeleteTask(_ context.Context, key string) error {
+	s.deleted = key
+	return s.err
+}
+
+func TestDeleteTaskConfirmation(t *testing.T) {
+	m := newMainTestModel(t, 120, 30)
+	svc := &deleteTestService{}
+	m.service = svc
+	key := m.issues[0].Key
+	backgroundTop := strings.Split(m.renderMain(), "\n")[0]
+
+	m.openDelete()
+	if m.screen != screenDelete || m.deletingTaskKey != key {
+		t.Fatalf("delete popup state = %v / %q", m.screen, m.deletingTaskKey)
+	}
+	modal := ansi.Strip(m.renderDeleteModal())
+	if top := strings.Split(m.renderDeleteModal(), "\n")[0]; top != backgroundTop {
+		t.Fatalf("delete modal replaced background top row\n got: %q\nwant: %q", top, backgroundTop)
+	}
+	for _, want := range []string{"Delete task", key, "permanently", "enter confirm", "esc cancel"} {
+		if !strings.Contains(modal, want) {
+			t.Errorf("delete popup missing %q:\n%s", want, modal)
+		}
+	}
+
+	m.updateDelete(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	if m.screen != screenMain {
+		t.Fatal("escape did not cancel deletion")
+	}
+	m.openDelete()
+	cmd := m.updateDelete(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if cmd == nil {
+		t.Fatal("confirm did not start deletion")
+	}
+	msg := cmd()
+	if svc.deleted != key {
+		t.Fatalf("deleted key = %q, want %q", svc.deleted, key)
+	}
+	m.Update(msg)
+	if _, ok := m.issueByKey(key); ok || m.screen != screenMain {
+		t.Fatalf("successful deletion retained issue or popup: screen=%v", m.screen)
+	}
+}
+
+func TestDeleteTaskFailureKeepsConfirmationOpen(t *testing.T) {
+	m := newMainTestModel(t, 120, 30)
+	m.service = &deleteTestService{err: errors.New("permission denied")}
+	m.openDelete()
+	cmd := m.deleteTaskCmd()
+	m.Update(cmd())
+	if m.screen != screenDelete || m.loading || m.err == nil {
+		t.Fatalf("failed delete state: screen=%v loading=%v err=%v", m.screen, m.loading, m.err)
+	}
+}
+
 func TestReportModalUsesSameOverlayBehavior(t *testing.T) {
 	m := newMainTestModel(t, 120, 30)
 	backgroundTop := strings.Split(m.renderMain(), "\n")[0]
@@ -140,8 +207,8 @@ func TestReportModalUsesSameOverlayBehavior(t *testing.T) {
 		t.Fatalf("report modal replaced background top row\n got: %q\nwant: %q", top, backgroundTop)
 	}
 	plain := ansi.Strip(modal)
-	if !strings.Contains(plain, "Daily Report") || !strings.Contains(plain, "Save: ctrl+s | Cancel: esc") {
-		t.Fatalf("report popup missing shared modal chrome/actions:\n%s", plain)
+	if !strings.Contains(plain, "Daily Report") || !strings.Contains(plain, "ctrl+s save  •  esc cancel") {
+		t.Fatalf("report popup missing bottom-border actions:\n%s", plain)
 	}
 }
 
@@ -153,8 +220,26 @@ func TestKeybindingsCanOverlayPointsScreen(t *testing.T) {
 		t.Fatalf("modal parent/screen = %v/%v", m.modalParent, m.screen)
 	}
 	modal := ansi.Strip(m.renderKeybindingsModal())
-	if !strings.Contains(modal, "Change: ←/→") || !strings.Contains(modal, "Keybindings") {
+	if !strings.Contains(modal, "change story points") || !strings.Contains(modal, "Keybindings") {
 		t.Fatalf("keybindings did not overlay points screen:\n%s", modal)
+	}
+}
+
+func TestKeybindingsModalFiltersAndRunsSelectedAction(t *testing.T) {
+	m := newMainTestModel(t, 100, 24)
+	m.screen = screenMain
+	m.openKeybindingsModal()
+	m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: '/', Text: "/"}))
+	for _, char := range "delete" {
+		m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: char, Text: string(char)}))
+	}
+	plain := ansi.Strip(m.renderKeybindingsModal())
+	if !strings.Contains(plain, "delete the selected task") || strings.Contains(plain, "create a new task") {
+		t.Fatalf("filtered menu has unexpected items:\n%s", plain)
+	}
+	m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if m.screen != screenDelete {
+		t.Fatalf("running filtered delete opened screen %v", m.screen)
 	}
 }
 
@@ -164,13 +249,12 @@ func TestKeybindingsModalNavigationAndClose(t *testing.T) {
 	m.screen = screenHelp
 
 	m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
-	if m.keybindingsViewport.Offset != 1 {
-		t.Fatalf("down offset = %d, want 1", m.keybindingsViewport.Offset)
+	if m.keybindingsSelected != 1 {
+		t.Fatalf("down selection = %d, want 1", m.keybindingsSelected)
 	}
 	m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnd}))
-	lineCount, pageSize := m.keybindingsModalMetrics()
-	if want := clampOffset(lineCount, lineCount, pageSize); m.keybindingsViewport.Offset != want {
-		t.Fatalf("end offset = %d, want %d", m.keybindingsViewport.Offset, want)
+	if want := m.selectableKeybindingCount() - 1; m.keybindingsSelected != want {
+		t.Fatalf("end selection = %d, want %d", m.keybindingsSelected, want)
 	}
 	m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
 	if m.screen != screenMain {

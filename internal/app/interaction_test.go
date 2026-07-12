@@ -27,6 +27,36 @@ func newMainTestModel(t *testing.T, width, height int) *Model {
 	return m
 }
 
+func TestStoryPointSelectionSupportsUnestimated(t *testing.T) {
+	if selectedStoryPoints(0) != nil {
+		t.Fatal("first story-point option is not unestimated")
+	}
+	firstEstimate := selectedStoryPoints(1)
+	if firstEstimate == nil || *firstEstimate != 0.5 {
+		t.Fatalf("first estimate = %v, want 0.5", firstEstimate)
+	}
+	if pointIndex(nil) != 0 || pointIndex(firstEstimate) != 1 {
+		t.Fatalf("point indexes = nil:%d estimate:%d", pointIndex(nil), pointIndex(firstEstimate))
+	}
+
+	m := newMainTestModel(t, 120, 20)
+	m.issues[0].StoryPoints = new(3.0)
+	m.openPoints()
+	m.updatePoints(tea.KeyPressMsg(tea.Key{Code: 'u'}), nil)
+	if m.issues[0].StoryPoints != nil || m.pointSelected != 0 {
+		t.Fatalf("unestimated selection = %v at %d", m.issues[0].StoryPoints, m.pointSelected)
+	}
+	m.issues[0].StoryPoints = new(5.0)
+	m.openPoints()
+	m.updatePoints(tea.KeyPressMsg(tea.Key{Code: 'c'}), nil)
+	if m.issues[0].StoryPoints != nil {
+		t.Fatalf("clear shortcut left story points at %v", m.issues[0].StoryPoints)
+	}
+	if got := pointsString(nil); got != "—" {
+		t.Fatalf("unestimated label = %q", got)
+	}
+}
+
 func TestPendingTaskContentSurvivesRefreshAndSuccess(t *testing.T) {
 	m := newMainTestModel(t, 120, 20)
 	key := m.issues[0].Key
@@ -106,7 +136,7 @@ func TestShortFilteredEmptyListKeepsFilterVisible(t *testing.T) {
 
 func TestEveryScreenHasExactTinyTerminalFallback(t *testing.T) {
 	m := newMainTestModel(t, 15, 4)
-	for _, screen := range []screen{screenSetup, screenMain, screenCreate, screenPoints, screenReport, screenHelp} {
+	for _, screen := range []screen{screenSetup, screenMain, screenCreate, screenDelete, screenPoints, screenReport, screenHelp} {
 		m.screen = screen
 		content := m.View().Content
 		lines := strings.Split(content, "\n")
@@ -204,6 +234,7 @@ func TestScreensRenderAtTheirMinimumSize(t *testing.T) {
 		{screenSetup, 40, 12},
 		{screenMain, 20, 6},
 		{screenCreate, 40, 12},
+		{screenDelete, 30, 8},
 		{screenPoints, 20, 6},
 		{screenReport, 40, 10},
 		{screenHelp, 30, 10},
