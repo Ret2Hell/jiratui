@@ -46,6 +46,12 @@ func TestStoryPointSelectionSupportsUnestimated(t *testing.T) {
 	if m.issues[0].StoryPoints != nil || m.pointSelected != 0 {
 		t.Fatalf("unestimated selection = %v at %d", m.issues[0].StoryPoints, m.pointSelected)
 	}
+	m.issues[0].StoryPoints = new(5.0)
+	m.openPoints()
+	m.updatePoints(tea.KeyPressMsg(tea.Key{Code: 'c'}), nil)
+	if m.issues[0].StoryPoints != nil {
+		t.Fatalf("clear shortcut left story points at %v", m.issues[0].StoryPoints)
+	}
 	if got := pointsString(nil); got != "—" {
 		t.Fatalf("unestimated label = %q", got)
 	}

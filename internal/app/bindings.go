@@ -96,13 +96,6 @@ func pointsBindings() []binding {
 	}
 }
 
-func filterBindings() []binding {
-	return []binding{
-		{cmdSave, []string{"enter"}, "apply the filter", "Apply", true, 10},
-		{cmdCancel, []string{"esc"}, "clear and close the filter", "Clear", true, 10},
-	}
-}
-
 func reportBindings() []binding {
 	return []binding{
 		{cmdSave, []string{"ctrl+s"}, "save the report draft", "Save", true, 10},
@@ -161,22 +154,6 @@ func (m *Model) activeBindings() []binding {
 		})
 	}
 	return bindings
-}
-
-func allBindingGroups() []bindingGroup {
-	main := mainBindings()
-	return []bindingGroup{
-		{Title: "Tasks", Bindings: bindingsForCommands(main, cmdNew, cmdEdit, cmdDelete, cmdPoints, cmdReport)},
-		{Title: "Workflow", Bindings: bindingsForCommands(main, cmdTodo, cmdProgress, cmdDone)},
-		{Title: "Navigation", Bindings: bindingsForCommands(main, cmdUp, cmdDown, cmdPageUp, cmdPageDown, cmdHome, cmdEnd, cmdFocus)},
-		{Title: "View", Bindings: bindingsForCommands(main, cmdFilter, cmdRefresh)},
-		{Title: "Filter mode", Bindings: filterBindings()},
-		{Title: "Story points", Bindings: pointsBindings()},
-		{Title: "Forms and dialogs", Bindings: append(append(createBindings(), deleteBindings()...), reportBindings()...)},
-		{Title: "Setup", Bindings: setupBindings("continue or save setup")},
-		{Title: "Keybindings popup", Bindings: keybindingsModalBindings()},
-		{Title: "Application", Bindings: bindingsForCommands(main, cmdHelp, cmdQuit)},
-	}
 }
 
 func bindingsForCommands(bindings []binding, commands ...commandID) []binding {

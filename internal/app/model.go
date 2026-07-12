@@ -77,16 +77,19 @@ type Model struct {
 	status              string
 	err                 error
 
-	projectName         string
-	sprint              jira.Sprint
-	issues              []jira.Issue
-	selected            int
-	ticketViewport      listViewport
-	detailsViewport     listViewport
-	keybindingsViewport listViewport
-	modalParent         screen
-	tempIssueSeq        int
-	totals              report.PointTotals
+	projectName          string
+	sprint               jira.Sprint
+	issues               []jira.Issue
+	selected             int
+	ticketViewport       listViewport
+	detailsViewport      listViewport
+	keybindingsViewport  listViewport
+	keybindingsSelected  int
+	keybindingsFilter    string
+	keybindingsFiltering bool
+	modalParent          screen
+	tempIssueSeq         int
+	totals               report.PointTotals
 
 	filtering   bool
 	filterInput textinput.Model

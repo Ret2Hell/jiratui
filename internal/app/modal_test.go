@@ -29,13 +29,14 @@ func TestMainFooterShowsOnlyPrimaryContextActions(t *testing.T) {
 
 func TestKeybindingsAreLogicallyGrouped(t *testing.T) {
 	m := newMainTestModel(t, 120, 40)
+	m.modalParent = screenMain
 	lines := ansi.Strip(strings.Join(m.keybindingLines(80), "\n"))
-	for _, heading := range []string{"--- Tasks ---", "--- Workflow ---", "--- Navigation ---", "--- View ---", "--- Filter mode ---", "--- Story points ---", "--- Forms and dialogs ---", "--- Setup ---", "--- Keybindings popup ---", "--- Application ---"} {
+	for _, heading := range []string{"Local", "Global", "Navigation"} {
 		if !strings.Contains(lines, heading) {
 			t.Errorf("keybindings missing heading %q", heading)
 		}
 	}
-	for _, action := range []string{"create a new task", "delete the selected task", "move to In Progress", "move one page down", "save the report draft", "show all keybindings"} {
+	for _, action := range []string{"create a new task", "delete the selected task", "move to In Progress", "move one page down", "open daily report", "show all keybindings"} {
 		if !strings.Contains(lines, action) {
 			t.Errorf("keybindings missing action %q", action)
 		}
@@ -54,7 +55,7 @@ func TestKeybindingsModalOverlaysCurrentScreen(t *testing.T) {
 		t.Fatalf("modal replaced background top row\n got: %q\nwant: %q", top, backgroundTop)
 	}
 	plain := ansi.Strip(modal)
-	if !strings.Contains(plain, "Keybindings") || !strings.Contains(plain, "--- Tasks ---") {
+	if !strings.Contains(plain, "Keybindings") || !strings.Contains(plain, "Local") {
 		t.Fatalf("keybindings popup not rendered over background:\n%s", plain)
 	}
 }
@@ -219,8 +220,26 @@ func TestKeybindingsCanOverlayPointsScreen(t *testing.T) {
 		t.Fatalf("modal parent/screen = %v/%v", m.modalParent, m.screen)
 	}
 	modal := ansi.Strip(m.renderKeybindingsModal())
-	if !strings.Contains(modal, "Change: ←/→") || !strings.Contains(modal, "Keybindings") {
+	if !strings.Contains(modal, "change story points") || !strings.Contains(modal, "Keybindings") {
 		t.Fatalf("keybindings did not overlay points screen:\n%s", modal)
+	}
+}
+
+func TestKeybindingsModalFiltersAndRunsSelectedAction(t *testing.T) {
+	m := newMainTestModel(t, 100, 24)
+	m.screen = screenMain
+	m.openKeybindingsModal()
+	m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: '/', Text: "/"}))
+	for _, char := range "delete" {
+		m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: char, Text: string(char)}))
+	}
+	plain := ansi.Strip(m.renderKeybindingsModal())
+	if !strings.Contains(plain, "delete the selected task") || strings.Contains(plain, "create a new task") {
+		t.Fatalf("filtered menu has unexpected items:\n%s", plain)
+	}
+	m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	if m.screen != screenDelete {
+		t.Fatalf("running filtered delete opened screen %v", m.screen)
 	}
 }
 
@@ -230,13 +249,12 @@ func TestKeybindingsModalNavigationAndClose(t *testing.T) {
 	m.screen = screenHelp
 
 	m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
-	if m.keybindingsViewport.Offset != 1 {
-		t.Fatalf("down offset = %d, want 1", m.keybindingsViewport.Offset)
+	if m.keybindingsSelected != 1 {
+		t.Fatalf("down selection = %d, want 1", m.keybindingsSelected)
 	}
 	m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnd}))
-	lineCount, pageSize := m.keybindingsModalMetrics()
-	if want := clampOffset(lineCount, lineCount, pageSize); m.keybindingsViewport.Offset != want {
-		t.Fatalf("end offset = %d, want %d", m.keybindingsViewport.Offset, want)
+	if want := m.selectableKeybindingCount() - 1; m.keybindingsSelected != want {
+		t.Fatalf("end selection = %d, want %d", m.keybindingsSelected, want)
 	}
 	m.updateKeybindingsModal(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
 	if m.screen != screenMain {

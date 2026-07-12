@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -34,18 +35,6 @@ func (m *Model) createPopupRects() (rect, rect) {
 	return rect{X: x, Y: y, Width: width, Height: summaryHeight}, rect{X: x, Y: y + summaryHeight, Width: width, Height: descriptionHeight}
 }
 
-func (m *Model) renderPopupPanel(background, title, content string, width, height int, scrollbar *scrollbarState) string {
-	panel := m.renderPanelSpec(panelSpec{
-		Title:     title,
-		Active:    true,
-		Content:   content,
-		Width:     width,
-		Height:    height,
-		Scrollbar: scrollbar,
-	})
-	return overlayCentered(background, panel, m.width, m.height)
-}
-
 func (m *Model) mainBackground() string {
 	background := *m
 	background.screen = screenMain
@@ -71,39 +60,93 @@ func (m *Model) modalBackground() string {
 	}
 }
 
+type keybindingMenuRow struct {
+	Line       string
+	Binding    binding
+	Selectable bool
+}
+
 func (m *Model) renderKeybindingsModal() string {
 	background := m.modalBackground()
 	width := popupWidth(m.width, 90, 60)
 	contentWidth := max(1, width-4)
-	allLines := m.keybindingLines(contentWidth)
-	_, pageSize := m.keybindingsModalMetrics()
-	height := pageSize + 3 // Frame plus one navigation hint row.
-	m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset, len(allLines), pageSize)
-	start, end := visibleRange(m.keybindingsViewport.Offset, len(allLines), pageSize)
-	lines := append([]string(nil), allLines[start:end]...)
-	for len(lines) < pageSize {
+	rows := m.keybindingMenuRows(contentWidth)
+	lineCount, pageSize := m.keybindingsModalMetrics()
+	m.keybindingsSelected = min(max(0, m.keybindingsSelected), max(0, m.selectableKeybindingCount()-1))
+	m.ensureSelectedKeybindingVisible(rows, pageSize)
+	m.keybindingsViewport.Offset = clampOffset(m.keybindingsViewport.Offset, lineCount, pageSize)
+	start, end := visibleRange(m.keybindingsViewport.Offset, lineCount, pageSize)
+	filterRows := 0
+	lines := make([]string, 0, pageSize+1)
+	if m.keybindingsFiltering || m.keybindingsFilter != "" {
+		filterRows = 1
+		lines = append(lines, m.styles.FooterKey.Render("/ ")+m.keybindingsFilter+"▌")
+	}
+	for _, row := range rows[start:end] {
+		lines = append(lines, row.Line)
+	}
+	for len(lines) < pageSize+filterRows {
 		lines = append(lines, "")
 	}
-	hint := m.styles.Muted.Render("↑/↓ scroll  •  esc close")
-	lines = append(lines, truncatePlain(hint, contentWidth))
-	return m.renderPopupPanel(
-		background,
-		"Keybindings",
-		strings.Join(lines, "\n"),
-		width,
-		height,
-		&scrollbarState{ContentSize: len(allLines), PageSize: pageSize, Offset: m.keybindingsViewport.Offset},
-	)
+	footer := "/ filter  •  esc close"
+	panel := m.renderPanelSpec(panelSpec{
+		Title:     "Keybindings",
+		Active:    true,
+		Content:   strings.Join(lines, "\n"),
+		Footer:    footer,
+		Width:     width,
+		Height:    pageSize + filterRows + 2,
+		Scrollbar: &scrollbarState{ContentSize: lineCount, PageSize: pageSize, Offset: m.keybindingsViewport.Offset},
+	})
+	return overlayCentered(background, panel, m.width, m.height)
 }
 
 func (m *Model) keybindingsModalMetrics() (int, int) {
-	lineCount := len(m.keybindingLines(max(1, popupWidth(m.width, 90, 60)-4)))
-	height := popupHeight(m.height, lineCount+1, 10)
-	return lineCount, max(1, height-3)
+	lineCount := len(m.keybindingMenuRows(max(1, popupWidth(m.width, 90, 60)-4)))
+	height := popupHeight(m.height, lineCount, 10)
+	pageSize := max(1, height-2)
+	if m.keybindingsFiltering || m.keybindingsFilter != "" {
+		pageSize--
+	}
+	return lineCount, max(1, pageSize)
 }
 
-func (m *Model) keybindingLines(width int) []string {
-	groups := allBindingGroups()
+func (m *Model) keybindingMenuGroups() []bindingGroup {
+	main := mainBindings()
+	navigation := []commandID{cmdUp, cmdDown, cmdPageUp, cmdPageDown, cmdHome, cmdEnd, cmdFocus}
+	global := []commandID{cmdHelp, cmdQuit}
+	local := slices.DeleteFunc(append([]binding(nil), main...), func(item binding) bool {
+		return slices.Contains(append(navigation, global...), item.Command)
+	})
+	if m.modalParent == screenMain {
+		return []bindingGroup{
+			{Title: "Local", Bindings: local},
+			{Title: "Global", Bindings: bindingsForCommands(main, global...)},
+			{Title: "Navigation", Bindings: bindingsForCommands(main, navigation...)},
+		}
+	}
+	var contextual []binding
+	switch m.modalParent {
+	case screenCreate:
+		contextual = createBindings()
+		if m.createFocus == 1 {
+			contextual[0].Keys = []string{"ctrl+s"}
+		}
+	case screenDelete:
+		contextual = deleteBindings()
+	case screenPoints:
+		contextual = pointsBindings()
+	case screenReport:
+		contextual = reportBindings()
+	case screenSetup:
+		contextual = setupBindings("continue or save setup")
+	}
+	return []bindingGroup{{Title: "Local", Bindings: contextual}, {Title: "Global", Bindings: bindingsForCommands(main, global...)}}
+}
+
+func (m *Model) keybindingMenuRows(width int) []keybindingMenuRow {
+	groups := m.keybindingMenuGroups()
+	query := strings.ToLower(strings.TrimSpace(m.keybindingsFilter))
 	keyWidth := 0
 	for _, group := range groups {
 		for _, item := range group.Bindings {
@@ -111,18 +154,87 @@ func (m *Model) keybindingLines(width int) []string {
 		}
 	}
 	keyWidth = min(keyWidth, max(8, width/3))
-
-	lines := make([]string, 0, 40)
-	for groupIndex, group := range groups {
-		if groupIndex > 0 {
-			lines = append(lines, "")
-		}
-		lines = append(lines, m.styles.ModalSection.Render("--- "+group.Title+" ---"))
+	selected := 0
+	rows := make([]keybindingMenuRow, 0, 32)
+	for _, group := range groups {
+		items := make([]binding, 0, len(group.Bindings))
 		for _, item := range group.Bindings {
-			keys := m.styles.FooterKey.Render(padRight(truncatePlain(bindingKeyList(item), keyWidth), keyWidth))
-			description := m.styles.Footer.Render(item.Description)
-			lines = append(lines, truncatePlain(keys+"  "+description, width))
+			haystack := strings.ToLower(group.Title + " " + bindingKeyList(item) + " " + item.Description)
+			if query == "" || strings.Contains(haystack, query) {
+				items = append(items, item)
+			}
+		}
+		if len(items) == 0 {
+			continue
+		}
+		if len(rows) > 0 {
+			rows = append(rows, keybindingMenuRow{})
+		}
+		rows = append(rows, keybindingMenuRow{Line: m.styles.ModalSection.Render(group.Title)})
+		for _, item := range items {
+			keyLabel := truncatePlain(bindingKeyList(item), keyWidth)
+			paddedKey := strings.Repeat(" ", max(0, keyWidth-ansiWidth(keyLabel))) + keyLabel
+			line := m.styles.FooterKey.Render(paddedKey) + "  " + m.styles.Footer.Render(item.Description)
+			if selected == m.keybindingsSelected {
+				line = m.styles.Selected.Width(width).Render(padRight(paddedKey+"  "+item.Description, width))
+			}
+			rows = append(rows, keybindingMenuRow{Line: truncatePlain(line, width), Binding: item, Selectable: true})
+			selected++
 		}
 	}
+	if len(rows) == 0 {
+		rows = append(rows, keybindingMenuRow{Line: m.styles.Muted.Render("No matching keybindings")})
+	}
+	return rows
+}
+
+func (m *Model) keybindingLines(width int) []string {
+	rows := m.keybindingMenuRows(width)
+	lines := make([]string, len(rows))
+	for i, row := range rows {
+		lines[i] = row.Line
+	}
 	return lines
+}
+
+func (m *Model) selectableKeybindingCount() int {
+	count := 0
+	for _, row := range m.keybindingMenuRows(max(1, popupWidth(m.width, 90, 60)-4)) {
+		if row.Selectable {
+			count++
+		}
+	}
+	return count
+}
+
+func (m *Model) selectedKeybinding() (binding, bool) {
+	selected := 0
+	for _, row := range m.keybindingMenuRows(max(1, popupWidth(m.width, 90, 60)-4)) {
+		if !row.Selectable {
+			continue
+		}
+		if selected == m.keybindingsSelected {
+			return row.Binding, true
+		}
+		selected++
+	}
+	return binding{}, false
+}
+
+func (m *Model) ensureSelectedKeybindingVisible(rows []keybindingMenuRow, pageSize int) {
+	selected, line := 0, 0
+	for i, row := range rows {
+		if row.Selectable {
+			if selected == m.keybindingsSelected {
+				line = i
+				break
+			}
+			selected++
+		}
+	}
+	if line < m.keybindingsViewport.Offset {
+		m.keybindingsViewport.Offset = line
+	} else if line >= m.keybindingsViewport.Offset+pageSize {
+		m.keybindingsViewport.Offset = line - pageSize + 1
+	}
 }
