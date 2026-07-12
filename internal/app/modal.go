@@ -1,7 +1,6 @@
 package app
 
 import (
-	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -113,35 +112,37 @@ func (m *Model) keybindingsModalMetrics() (int, int) {
 
 func (m *Model) keybindingMenuGroups() []bindingGroup {
 	main := mainBindings()
-	navigation := []commandID{cmdUp, cmdDown, cmdPageUp, cmdPageDown, cmdHome, cmdEnd, cmdFocus}
-	global := []commandID{cmdHelp, cmdQuit}
-	local := slices.DeleteFunc(append([]binding(nil), main...), func(item binding) bool {
-		return slices.Contains(append(navigation, global...), item.Command)
-	})
+	application := bindingsForCommands(main, cmdHelp, cmdQuit)
 	if m.modalParent == screenMain {
 		return []bindingGroup{
-			{Title: "Local", Bindings: local},
-			{Title: "Global", Bindings: bindingsForCommands(main, global...)},
-			{Title: "Navigation", Bindings: bindingsForCommands(main, navigation...)},
+			{Title: "Tasks", Bindings: bindingsForCommands(main, cmdNew, cmdEdit, cmdDelete, cmdPoints)},
+			{Title: "Workflow", Bindings: bindingsForCommands(main, cmdTodo, cmdProgress, cmdDone)},
+			{Title: "View", Bindings: bindingsForCommands(main, cmdReport, cmdFilter, cmdRefresh)},
+			{Title: "Navigation", Bindings: bindingsForCommands(main, cmdUp, cmdDown, cmdPageUp, cmdPageDown, cmdHome, cmdEnd, cmdFocus)},
+			{Title: "Application", Bindings: application},
 		}
 	}
+	var title string
 	var contextual []binding
 	switch m.modalParent {
 	case screenCreate:
+		title = "Task form"
 		contextual = createBindings()
 		if m.createFocus == 1 {
 			contextual[0].Keys = []string{"ctrl+s"}
 		}
 	case screenDelete:
-		contextual = deleteBindings()
+		title, contextual = "Delete confirmation", deleteBindings()
 	case screenPoints:
-		contextual = pointsBindings()
+		title, contextual = "Story points", pointsBindings()
 	case screenReport:
-		contextual = reportBindings()
+		title, contextual = "Daily report", reportBindings()
 	case screenSetup:
-		contextual = setupBindings("continue or save setup")
+		title, contextual = "Setup", setupBindings("continue or save setup")
+	default:
+		title = "Actions"
 	}
-	return []bindingGroup{{Title: "Local", Bindings: contextual}, {Title: "Global", Bindings: bindingsForCommands(main, global...)}}
+	return []bindingGroup{{Title: title, Bindings: contextual}, {Title: "Application", Bindings: application}}
 }
 
 func (m *Model) keybindingMenuRows(width int) []keybindingMenuRow {

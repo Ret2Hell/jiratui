@@ -31,7 +31,7 @@ func TestKeybindingsAreLogicallyGrouped(t *testing.T) {
 	m := newMainTestModel(t, 120, 40)
 	m.modalParent = screenMain
 	lines := ansi.Strip(strings.Join(m.keybindingLines(80), "\n"))
-	for _, heading := range []string{"Local", "Global", "Navigation"} {
+	for _, heading := range []string{"Tasks", "Workflow", "View", "Navigation", "Application"} {
 		if !strings.Contains(lines, heading) {
 			t.Errorf("keybindings missing heading %q", heading)
 		}
@@ -55,7 +55,7 @@ func TestKeybindingsModalOverlaysCurrentScreen(t *testing.T) {
 		t.Fatalf("modal replaced background top row\n got: %q\nwant: %q", top, backgroundTop)
 	}
 	plain := ansi.Strip(modal)
-	if !strings.Contains(plain, "Keybindings") || !strings.Contains(plain, "Local") {
+	if !strings.Contains(plain, "Keybindings") || !strings.Contains(plain, "Tasks") {
 		t.Fatalf("keybindings popup not rendered over background:\n%s", plain)
 	}
 }
