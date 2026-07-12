@@ -24,6 +24,7 @@ const (
 	screenSetup screen = iota
 	screenMain
 	screenCreate
+	screenDelete
 	screenPoints
 	screenReport
 	screenHelp
@@ -101,6 +102,8 @@ type Model struct {
 	editingTaskKey         string
 	editingTaskOriginal    string
 	editingTaskDescription string
+	deletingTaskKey        string
+	deletingTaskSummary    string
 
 	pointSelected         int
 	pointEditingKey       string

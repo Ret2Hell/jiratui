@@ -72,6 +72,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "Create failed: " + msg.Err.Error()
 		m.recalcTotals()
 		cmds = append(cmds, m.saveCacheCmd())
+	case taskDeletedMsg:
+		m.loading = false
+		m.err = nil
+		m.removeIssue(msg.Key)
+		delete(m.pendingTaskUpdates, msg.Key)
+		delete(m.pendingPointOriginals, msg.Key)
+		delete(m.pendingStatusOriginal, msg.Key)
+		delete(m.localStatusChanges, msg.Key)
+		m.deletingTaskKey = ""
+		m.deletingTaskSummary = ""
+		m.screen = screenMain
+		m.status = "Deleted " + msg.Key
+		m.recalcTotals()
+		m.refreshLocalDraft()
+		cmds = append(cmds, m.saveCacheCmd(), m.generateReportCmd(false))
+	case taskDeleteFailedMsg:
+		m.loading = false
+		m.err = msg.Err
+		m.status = "Delete failed: " + msg.Err.Error()
 	case taskUpdatedMsg:
 		if pending, ok := m.pendingTaskUpdates[msg.Key]; ok {
 			if pending.Desired != (taskContent{Summary: msg.Summary, Description: msg.Description}) {
@@ -200,6 +219,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.updateMain(key))
 		case screenCreate:
 			cmds = append(cmds, m.updateCreate(key, msg))
+		case screenDelete:
+			cmds = append(cmds, m.updateDelete(key))
 		case screenPoints:
 			cmds = append(cmds, m.updatePoints(key, msg))
 		case screenReport:
@@ -349,6 +370,8 @@ func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
 		m.openCreate()
 	case cmdEdit:
 		m.openEdit()
+	case cmdDelete:
+		m.openDelete()
 	case cmdPoints:
 		m.openPoints()
 	case cmdTodo:
@@ -450,6 +473,25 @@ func (m *Model) updateCreate(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
 		m.createDescription, cmd = m.createDescription.Update(msg)
 	}
 	return cmd
+}
+
+func (m *Model) updateDelete(key tea.KeyPressMsg) tea.Cmd {
+	binding, ok := bindingForKey(m.activeBindings(), key.Keystroke())
+	if !ok {
+		return nil
+	}
+	switch binding.Command {
+	case cmdCancel:
+		if !m.loading {
+			m.deletingTaskKey = ""
+			m.deletingTaskSummary = ""
+			m.err = nil
+			m.screen = screenMain
+		}
+	case cmdSave:
+		return m.deleteTaskCmd()
+	}
+	return nil
 }
 
 func (m *Model) updatePoints(key tea.KeyPressMsg, _ tea.Msg) tea.Cmd {
@@ -660,6 +702,17 @@ func (m *Model) openEdit() {
 	m.createDescription.SetValue(issue.Description)
 	m.focusCreate(0)
 	m.screen = screenCreate
+}
+
+func (m *Model) openDelete() {
+	issue, ok := m.selectedIssue()
+	if !ok || strings.HasPrefix(issue.Key, "NEW-") {
+		return
+	}
+	m.deletingTaskKey = issue.Key
+	m.deletingTaskSummary = issue.Summary
+	m.err = nil
+	m.screen = screenDelete
 }
 
 func (m *Model) openPoints() {

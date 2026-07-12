@@ -24,6 +24,8 @@ func (m *Model) View() tea.View {
 			content = m.renderSetup()
 		case screenCreate:
 			content = m.renderCreateModal()
+		case screenDelete:
+			content = m.renderDeleteModal()
 		case screenPoints:
 			content = m.renderMain()
 		case screenReport:
@@ -53,6 +55,8 @@ func (m *Model) minimumScreenSize() (int, int) {
 		return 40, 12
 	case screenCreate:
 		return 40, 12
+	case screenDelete:
+		return 30, 8
 	case screenReport:
 		return 40, 10
 	case screenHelp:
@@ -346,6 +350,26 @@ func (m *Model) renderCreateModal() string {
 	})
 	popup := lipgloss.JoinVertical(lipgloss.Left, summaryPanel, descriptionPanel)
 	return overlayCentered(background, popup, m.width, m.height)
+}
+
+func (m *Model) renderDeleteModal() string {
+	background := m.mainBackground()
+	width := popupWidth(m.width, 72, 48)
+	contentWidth := max(1, width-4)
+	lines := []string{
+		"Permanently delete " + m.styles.Title.Render(m.deletingTaskKey) + "?",
+		m.styles.Muted.Render(truncatePlain(m.deletingTaskSummary, contentWidth)),
+		"",
+	}
+	if m.loading {
+		lines = append(lines, m.spinner.View()+" "+m.styles.Muted.Render("Deleting…"))
+	} else if m.err != nil {
+		lines = append(lines, m.styles.Error.Render(truncatePlain(m.err.Error(), contentWidth)))
+	} else {
+		lines = append(lines, m.styles.Muted.Render("enter confirm  •  esc cancel"))
+	}
+	height := popupHeight(m.height, len(lines), 7)
+	return m.renderPopupPanel(background, "Delete task", strings.Join(lines, "\n"), width, height, nil)
 }
 
 func (m *Model) renderReport() string {

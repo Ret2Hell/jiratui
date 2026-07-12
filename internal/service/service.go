@@ -39,6 +39,7 @@ type Service interface {
 	LoadSprint(context.Context) (SprintData, error)
 	CreateTask(context.Context, TaskInput) (jira.Issue, error)
 	UpdateTask(context.Context, string, TaskInput) error
+	DeleteTask(context.Context, string) error
 	Transitions(context.Context, string) ([]jira.Transition, error)
 	TransitionIssue(context.Context, string, string) error
 	MoveToStatus(context.Context, string, string) (jira.Status, error)
@@ -138,6 +139,11 @@ func (s *JiraService) UpdateTask(ctx context.Context, issueKey string, input Tas
 		return fmt.Errorf("summary is required")
 	}
 	return s.jira.UpdateTask(ctx, issueKey, strings.TrimSpace(input.Summary), strings.TrimSpace(input.Description))
+}
+
+// DeleteTask permanently deletes an issue.
+func (s *JiraService) DeleteTask(ctx context.Context, issueKey string) error {
+	return s.jira.DeleteTask(ctx, issueKey)
 }
 
 // Transitions returns valid issue transitions.

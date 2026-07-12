@@ -106,7 +106,7 @@ func TestShortFilteredEmptyListKeepsFilterVisible(t *testing.T) {
 
 func TestEveryScreenHasExactTinyTerminalFallback(t *testing.T) {
 	m := newMainTestModel(t, 15, 4)
-	for _, screen := range []screen{screenSetup, screenMain, screenCreate, screenPoints, screenReport, screenHelp} {
+	for _, screen := range []screen{screenSetup, screenMain, screenCreate, screenDelete, screenPoints, screenReport, screenHelp} {
 		m.screen = screen
 		content := m.View().Content
 		lines := strings.Split(content, "\n")
@@ -204,6 +204,7 @@ func TestScreensRenderAtTheirMinimumSize(t *testing.T) {
 		{screenSetup, 40, 12},
 		{screenMain, 20, 6},
 		{screenCreate, 40, 12},
+		{screenDelete, 30, 8},
 		{screenPoints, 20, 6},
 		{screenReport, 40, 10},
 		{screenHelp, 30, 10},

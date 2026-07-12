@@ -60,6 +60,8 @@ func (m *Model) modalBackground() string {
 		return background.renderSetup()
 	case screenCreate:
 		return background.renderCreateModal()
+	case screenDelete:
+		return background.renderDeleteModal()
 	case screenPoints:
 		return background.renderMain()
 	case screenReport:

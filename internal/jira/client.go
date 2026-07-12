@@ -295,6 +295,12 @@ func (c *Client) UpdateTask(ctx context.Context, issueKey, summary, description 
 	return c.do(ctx, http.MethodPut, path, nil, map[string]any{"fields": fields}, nil)
 }
 
+// DeleteTask permanently deletes an issue.
+func (c *Client) DeleteTask(ctx context.Context, issueKey string) error {
+	path := fmt.Sprintf("/rest/api/3/issue/%s", url.PathEscape(issueKey))
+	return c.do(ctx, http.MethodDelete, path, nil, nil, nil)
+}
+
 // UpdateStoryPoints sets or clears the story points custom field for an issue.
 func (c *Client) UpdateStoryPoints(ctx context.Context, issueKey, storyPointsFieldID string, points *float64) error {
 	if storyPointsFieldID == "" {
