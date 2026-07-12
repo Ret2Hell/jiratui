@@ -90,7 +90,7 @@ func pointsBindings() []binding {
 	return []binding{
 		{cmdChange, []string{"left", "right", "up", "down", "h", "j", "k", "l"}, "change story points", "Change", true, 10},
 		{cmdSelect, []string{"0", "1", "2", "3", "4", "5", "6"}, "select a story-point value", "Select", true, 10},
-		{cmdClear, []string{"u"}, "set story points to unestimated", "Unestimated", true, 10},
+		{cmdClear, []string{"u", "c"}, "set story points to unestimated", "Unestimated", true, 10},
 		{cmdSave, []string{"enter"}, "save story points", "Save", true, 10},
 		{cmdCancel, []string{"esc"}, "close without saving", "Cancel", true, 10},
 	}
