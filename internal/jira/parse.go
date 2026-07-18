@@ -56,7 +56,8 @@ func parseIssue(raw issueJSON, storyPointsFieldID string) Issue {
 	fields := raw.Fields
 	issue := Issue{ID: raw.ID, Key: raw.Key}
 	issue.Summary, _ = fields["summary"].(string)
-	issue.Description = parseADFText(fields["description"])
+	issue.DescriptionContent = descriptionFromADF(fields["description"])
+	issue.Description = issue.DescriptionContent.EditorText
 	issue.Status = parseStatusFromAny(fields["status"])
 	issue.IssueType = parseIssueType(fields["issuetype"])
 	issue.Assignee = parseUserPtr(fields["assignee"])
@@ -72,17 +73,7 @@ type adfNode struct {
 	Text    string         `json:"text"`
 	Attrs   map[string]any `json:"attrs"`
 	Content []adfNode      `json:"content"`
-}
-
-func parseADFText(value any) string {
-	if value == nil {
-		return ""
-	}
-	var root adfNode
-	if remarshal(value, &root) != nil {
-		return ""
-	}
-	return strings.TrimSpace(adfText(root))
+	Marks   []any          `json:"marks"`
 }
 
 func adfText(node adfNode) string {
@@ -98,7 +89,11 @@ func adfText(node adfNode) string {
 	case "inlineCard", "blockCard", "embedCard":
 		return firstADFAttr(node, "url")
 	case "media":
-		return firstADFAttr(node, "alt", "title")
+		filename := firstADFAttr(node, "alt", "title")
+		if filename == "" {
+			filename = "image"
+		}
+		return "[Description image: " + filename + "]"
 	case "date":
 		return firstADFAttr(node, "timestamp")
 	case "status":
@@ -116,6 +111,17 @@ func adfText(node adfNode) string {
 	return builder.String()
 }
 
+func asInt(value any) int {
+	switch value := value.(type) {
+	case int:
+		return value
+	case float64:
+		return int(value)
+	default:
+		return 0
+	}
+}
+
 func firstADFAttr(node adfNode, keys ...string) string {
 	for _, key := range keys {
 		if value := asString(node.Attrs[key]); value != "" {
@@ -127,7 +133,7 @@ func firstADFAttr(node adfNode, keys ...string) string {
 
 func isADFBlock(nodeType string) bool {
 	switch nodeType {
-	case "paragraph", "heading", "blockquote", "listItem", "bulletList", "orderedList", "codeBlock":
+	case "paragraph", "heading", "blockquote", "listItem", "bulletList", "orderedList", "codeBlock", "mediaSingle", "mediaGroup":
 		return true
 	default:
 		return false

@@ -57,15 +57,53 @@ type IssueType struct {
 
 // Issue is the minimal issue shape used by jiratui.
 type Issue struct {
-	ID          string
-	Key         string
-	Summary     string
-	Description string
-	Status      Status
-	IssueType   IssueType
-	Assignee    *User
-	StoryPoints *float64
-	Updated     time.Time
+	ID                 string
+	Key                string
+	Summary            string
+	Description        string
+	DescriptionContent Description
+	Status             Status
+	IssueType          IssueType
+	Assignee           *User
+	StoryPoints        *float64
+	Updated            time.Time
+}
+
+// Description is the editable projection and preservation state of Jira ADF.
+type Description struct {
+	EditorText        string
+	Editable          bool
+	UnsupportedReason string
+	Images            []DescriptionImage
+	References        []DescriptionImageReference
+	RawADF            []byte
+}
+
+// DescriptionImage is one image in a task draft, independent of its references.
+type DescriptionImage struct {
+	ID           string
+	AttachmentID string
+	Filename     string
+	MIMEType     string
+	Data         []byte
+	URL          string
+	MediaID      string
+	Collection   string
+	Width        int
+	Height       int
+}
+
+// DescriptionImageReference is one block-level occurrence of a description image.
+type DescriptionImageReference struct {
+	ImageID      string
+	Alt          string
+	Presentation []byte
+}
+
+// AttachmentMeta contains Jira's site-wide attachment limits.
+type AttachmentMeta struct {
+	Enabled     bool
+	UploadLimit int
 }
 
 // Transition is a valid Jira workflow transition for an issue.
@@ -106,8 +144,9 @@ type CreateTaskInput struct {
 	IssueTypeID     string
 	AssigneeID      string
 	Summary         string
-	Description     string
+	Description     Description
 	StoryPoints     *float64
 	StoryPointsID   string
 	AdditionalField map[string]any
+	SaveID          string
 }

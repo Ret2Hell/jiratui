@@ -3,13 +3,16 @@ package app
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Ret2Hell/jiratui/internal/config"
+	"github.com/Ret2Hell/jiratui/internal/imageclip"
 	"github.com/Ret2Hell/jiratui/internal/jira"
+	"github.com/Ret2Hell/jiratui/internal/tasksave"
 )
 
 // Update handles Bubble Tea messages.
@@ -30,11 +33,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = msg.Err.Error()
 			break
 		}
+		if msg.OK {
+			m.cacheRevision = max(m.cacheRevision, msg.State.Revision)
+		}
 		if msg.OK && len(m.issues) == 0 {
 			selectedKey := m.selectedIssueKey()
 			m.projectName = msg.State.ProjectName
 			m.sprint = msg.State.Sprint
 			m.issues = msg.State.Issues
+			for _, journal := range m.discardedTaskSaves {
+				m.discardTaskSaveProjection(journal)
+			}
 			m.reportDraft = msg.State.Draft
 			if strings.TrimSpace(m.reportDraft.Body) == "" {
 				m.refreshLocalDraft()
@@ -58,20 +67,141 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recalcTotals()
 		m.refreshLocalDraft()
 		cmds = append(cmds, m.saveCacheCmd(), m.generateReportCmd(false))
-	case taskCreatedMsg:
+	case attachmentMetaLoadedMsg:
+		m.attachmentMetaLoading = false
+		if msg.Err != nil {
+			m.imagePasteAvailable = false
+			m.imagePasteUnavailableReason = "Jira attachment metadata is unavailable"
+			break
+		}
+		m.imagePasteAvailable = msg.Meta.Enabled
+		m.imagePasteUnavailableReason = "Jira attachments are disabled"
+		if msg.Meta.Enabled {
+			m.imagePasteUnavailableReason = ""
+			m.imageUploadLimit = imageclip.MaxImageBytes
+			if msg.Meta.UploadLimit > 0 {
+				m.imageUploadLimit = min(m.imageUploadLimit, msg.Meta.UploadLimit)
+			}
+		}
+	case taskJournalsLoadedMsg:
+		m.taskJournalsLoading = false
+		for _, journal := range msg.Journals {
+			m.restoreTaskSave(journal)
+		}
+		for _, journal := range msg.Expired {
+			m.discardTaskSaveProjection(journal)
+		}
+		m.discardedTaskSaves = append(m.discardedTaskSaves, msg.Expired...)
+		if msg.Err != nil {
+			m.err = msg.Err
+			m.status = "Some Task Drafts could not be loaded: " + msg.Err.Error()
+		} else if len(msg.Expired) > 0 {
+			m.status = fmt.Sprintf("Expired %d Task Draft save(s); accepted Jira changes were retained", len(msg.Expired))
+		} else if len(msg.Journals) > 0 {
+			m.status = fmt.Sprintf("Recovered %d unfinished task save(s); select one to retry or abandon", len(msg.Journals))
+		}
+		m.recalcTotals()
+		if len(msg.Expired) > 0 {
+			cmds = append(cmds, m.saveCacheCmd(), m.loadSprintCmd())
+		}
+	case taskSaveFinishedMsg:
+		delete(m.runningTaskSaves, msg.Journal.ID)
+		previous := m.taskSaves[msg.Journal.ID]
+		m.taskSaves[msg.Journal.ID] = msg.Journal
+		projection := msg.Journal.Projection()
+		oldKey := previous.IssueKey
+		if oldKey == "" {
+			oldKey = previous.TempKey
+		}
+		if oldKey == "" {
+			oldKey = msg.Journal.TempKey
+		}
+		if oldKey != projection.Key {
+			delete(m.pendingCreates, oldKey)
+			m.replaceIssue(oldKey, projection)
+		} else {
+			m.replaceIssue(projection.Key, projection)
+		}
+		if msg.Journal.Complete() {
+			delete(m.taskSaves, msg.Journal.ID)
+			delete(m.pendingCreates, projection.Key)
+			delete(m.pendingTaskUpdates, projection.Key)
+			m.err = msg.Err
+			if msg.Journal.Kind == tasksave.KindCreate {
+				m.status = "Created " + projection.Key
+			} else {
+				m.status = "Updated " + projection.Key
+			}
+			cmds = append(cmds, m.saveCacheCmd(), m.loadSprintCmd())
+		} else {
+			if msg.Journal.Kind == tasksave.KindCreate {
+				m.pendingCreates[projection.Key] = projection
+			}
+			m.err = msg.Err
+			m.status = "Task Draft save paused for " + projection.Key
+			if isPartialSave(msg.Journal) {
+				m.status = "Partial Save for " + projection.Key
+			}
+			if msg.Err != nil {
+				m.status += ": " + msg.Err.Error()
+			}
+			cmds = append(cmds, m.saveCacheCmd())
+		}
+		m.recalcTotals()
+	case taskSaveAbandonedMsg:
+		if msg.Err != nil {
+			m.err = msg.Err
+			m.status = "Could not abandon Partial Save: " + msg.Err.Error()
+			break
+		}
+		delete(m.taskSaves, msg.Journal.ID)
+		delete(m.runningTaskSaves, msg.Journal.ID)
+		projection := msg.Journal.Projection()
+		delete(m.pendingCreates, projection.Key)
+		delete(m.pendingCreates, msg.Journal.TempKey)
+		delete(m.pendingTaskUpdates, msg.Journal.IssueKey)
+		if msg.Journal.Kind == tasksave.KindCreate {
+			m.removeIssue(projection.Key)
+			if projection.Key != msg.Journal.TempKey {
+				m.removeIssue(msg.Journal.TempKey)
+			}
+		} else {
+			m.replaceIssue(msg.Journal.IssueKey, msg.Journal.Issue)
+		}
 		m.err = nil
-		delete(m.pendingCreates, msg.TempKey)
-		m.replaceIssue(msg.TempKey, msg.Issue)
-		m.status = "Created " + msg.Issue.Key
+		if msg.Expired {
+			m.status = "Task save expired; accepted Jira changes were retained"
+		} else {
+			m.status = "Abandoned Task Draft save"
+			if isPartialSave(msg.Journal) {
+				m.status = "Abandoned Partial Save; accepted Jira changes were retained"
+			}
+		}
 		m.recalcTotals()
-		cmds = append(cmds, m.saveCacheCmd())
-	case taskCreateFailedMsg:
-		delete(m.pendingCreates, msg.TempKey)
-		m.removeIssue(msg.TempKey)
-		m.err = msg.Err
-		m.status = "Create failed: " + msg.Err.Error()
-		m.recalcTotals()
-		cmds = append(cmds, m.saveCacheCmd())
+		cmds = append(cmds, m.saveCacheCmd(), m.loadSprintCmd())
+	case descriptionImagePastedMsg:
+		if msg.SessionID != m.editorSessionID || m.screen != screenCreate {
+			break
+		}
+		m.imagePastePending = false
+		if msg.Err != nil {
+			m.err = msg.Err
+			m.status = "Image paste failed: " + msg.Err.Error()
+			break
+		}
+		m.editingDescription.Images = append(m.editingDescription.Images, msg.Image)
+		token := jira.ImageReferenceToken(msg.Image.ID, msg.Image.Filename)
+		currentText := m.createDescription.Value()
+		currentOffset := textareaOffset(currentText, m.createDescription.Line(), m.createDescription.Column())
+		text, added := insertDescriptionBlock(currentText, msg.Offset, token)
+		if msg.Offset <= currentOffset {
+			currentOffset += added
+		}
+		m.createDescription.SetValue(text)
+		setTextareaOffset(&m.createDescription, text, currentOffset)
+		m.editingDescription.EditorText = text
+		m.err = nil
+		m.status = "Added " + msg.Image.Filename
 	case taskDeletedMsg:
 		m.loading = false
 		m.err = nil
@@ -90,32 +220,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.err = msg.Err
 		m.status = "Delete failed: " + msg.Err.Error()
-	case taskUpdatedMsg:
-		if pending, ok := m.pendingTaskUpdates[msg.Key]; ok {
-			if pending.Desired != (taskContent{Summary: msg.Summary, Description: msg.Description}) {
-				break
-			}
-			delete(m.pendingTaskUpdates, msg.Key)
-		}
-		m.updateIssueContent(msg.Key, msg.Summary, msg.Description)
-		m.err = nil
-		m.status = "Updated " + msg.Key
-		cmds = append(cmds, m.saveCacheCmd())
-	case taskUpdateFailedMsg:
-		if pending, ok := m.pendingTaskUpdates[msg.Key]; ok {
-			if pending.Desired != (taskContent{Summary: msg.Summary, Description: msg.Description}) {
-				break
-			}
-			if current, found := m.issueByKey(msg.Key); found && current.Summary == pending.Desired.Summary && current.Description == pending.Desired.Description {
-				m.updateIssueContent(msg.Key, pending.Original.Summary, pending.Original.Description)
-			}
-			delete(m.pendingTaskUpdates, msg.Key)
-		} else {
-			m.updateIssueContent(msg.Key, msg.OriginalSummary, msg.OriginalDescription)
-		}
-		m.err = msg.Err
-		m.status = "Update failed: " + msg.Err.Error()
-		cmds = append(cmds, m.saveCacheCmd())
 	case issueTransitionedMsg:
 		if current, ok := m.issueByKey(msg.Key); !ok || statusEqual(current.Status, msg.Status) {
 			delete(m.pendingStatusOriginal, msg.Key)
@@ -192,8 +296,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cfg = msg.Config
 		m.service = msg.Service
 		m.screen = screenMain
+		m.taskJournalsLoading = true
+		m.attachmentMetaLoading = true
+		m.imagePasteAvailable = false
 		m.status = "Setup saved"
-		cmds = append(cmds, m.loadCacheCmd(), m.loadSprintCmd())
+		cmds = append(cmds, m.loadCacheCmd(), m.loadTaskJournalsCmd(), m.loadAttachmentMetaCmd(), m.loadSprintCmd())
+	case themeSavedMsg:
+		m.err = nil
+		m.status = fmt.Sprintf("Theme %q saved", msg.Name)
+	case themeSaveFailedMsg:
+		m.err = msg.Err
+		m.status = fmt.Sprintf("Could not save theme %q: %v", msg.Name, msg.Err)
 	case errMsg:
 		m.refreshingReport = false
 		m.openReportWhenReady = false
@@ -226,6 +339,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.updateReport(key, msg))
 		case screenHelp:
 			cmds = append(cmds, m.updateKeybindingsModal(key))
+		case screenTheme:
+			cmds = append(cmds, m.updateThemePicker(key))
 		}
 	}
 
@@ -247,6 +362,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateMouseWheel(wheel)
 		case screenHelp:
 			m.scrollKeybindingsModal(wheel)
+		case screenTheme:
+			m.scrollThemePicker(wheel)
 		}
 	}
 	return m, tea.Batch(cmds...)
@@ -269,8 +386,9 @@ func (m *Model) updatePaste(msg tea.Msg) tea.Cmd {
 	case screenCreate:
 		if m.createFocus == 0 {
 			m.createSummary, cmd = m.createSummary.Update(msg)
-		} else {
+		} else if m.editingDescription.Editable {
 			m.createDescription, cmd = m.createDescription.Update(msg)
+			m.editingDescription.EditorText = m.createDescription.Value()
 		}
 	case screenPoints:
 		// Story points are selected from fixed Fibonacci chips; paste is ignored.
@@ -381,6 +499,12 @@ func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
 		return m.quickMoveCmd("done")
 	case cmdReport:
 		return m.openReportCmd()
+	case cmdTheme:
+		m.openThemePicker()
+	case cmdRetrySave:
+		return m.retryTaskSaveCmd()
+	case cmdAbandonSave:
+		return m.abandonTaskSaveCmd(false)
 	case cmdUp:
 		m.navigateFocused(-1, false)
 	case cmdDown:
@@ -556,6 +680,8 @@ func (m *Model) updateCreate(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
 	if binding, ok := bindingForKey(m.activeBindings(), key.Keystroke()); ok {
 		switch binding.Command {
 		case cmdCancel:
+			m.editorSessionID++
+			m.imagePastePending = false
 			m.screen = screenMain
 			return nil
 		case cmdSave:
@@ -563,6 +689,8 @@ func (m *Model) updateCreate(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
 				return m.updateTaskCmd()
 			}
 			return m.createTaskCmd()
+		case cmdPasteImage:
+			return m.pasteDescriptionImageCmd()
 		case cmdFocus:
 			if key.Keystroke() == "tab" {
 				m.focusCreate(m.createFocus + 1)
@@ -576,7 +704,10 @@ func (m *Model) updateCreate(key tea.KeyPressMsg, msg tea.Msg) tea.Cmd {
 	if m.createFocus == 0 {
 		m.createSummary, cmd = m.createSummary.Update(msg)
 	} else {
-		m.createDescription, cmd = m.createDescription.Update(msg)
+		if m.editingDescription.Editable {
+			m.createDescription, cmd = m.createDescription.Update(msg)
+			m.editingDescription.EditorText = m.createDescription.Value()
+		}
 	}
 	return cmd
 }
@@ -789,9 +920,12 @@ func (m *Model) focusCreate(next int) {
 }
 
 func (m *Model) openCreate() {
+	m.editorSessionID++
+	m.imagePastePending = false
 	m.editingTaskKey = ""
 	m.editingTaskOriginal = ""
-	m.editingTaskDescription = ""
+	m.editingTaskOriginalDescription = jira.Description{}
+	m.editingDescription = jira.PlainDescription("")
 	m.createSummary.SetValue("")
 	m.createDescription.SetValue("")
 	m.focusCreate(0)
@@ -803,11 +937,18 @@ func (m *Model) openEdit() {
 	if !ok || strings.HasPrefix(issue.Key, "NEW-") {
 		return
 	}
+	m.editorSessionID++
+	m.imagePastePending = false
 	m.editingTaskKey = issue.Key
 	m.editingTaskOriginal = issue.Summary
-	m.editingTaskDescription = issue.Description
+	description := issue.DescriptionContent
+	if description.EditorText == "" && issue.Description != "" && len(description.RawADF) == 0 {
+		description = jira.PlainDescription(issue.Description)
+	}
+	m.editingTaskOriginalDescription = description
+	m.editingDescription = description
 	m.createSummary.SetValue(issue.Summary)
-	m.createDescription.SetValue(issue.Description)
+	m.createDescription.SetValue(description.EditorText)
 	m.focusCreate(0)
 	m.screen = screenCreate
 }
@@ -875,6 +1016,9 @@ func (m *Model) mergeSprintData(remote []jira.Issue) {
 		}
 	}
 	for _, issue := range remote {
+		if _, pending := m.pendingCreates[issue.Key]; pending {
+			continue
+		}
 		if local, ok := localByKey[issue.Key]; ok {
 			if _, pending := m.pendingTaskUpdates[issue.Key]; pending {
 				issue.Summary = local.Summary
@@ -890,6 +1034,61 @@ func (m *Model) mergeSprintData(remote []jira.Issue) {
 		merged = append(merged, issue)
 	}
 	m.issues = merged
+}
+
+func (m *Model) restoreTaskSave(journal tasksave.Journal) {
+	if journal.Complete() {
+		return
+	}
+	m.taskSaves[journal.ID] = journal
+	projection := journal.Projection()
+	if journal.Kind == tasksave.KindCreate {
+		key := journal.TempKey
+		if journal.IssueCreated && journal.IssueKey != "" {
+			key = journal.IssueKey
+		}
+		if key != journal.TempKey {
+			m.removeIssue(journal.TempKey)
+		}
+		m.pendingCreates[key] = projection
+		if sequence, err := strconv.Atoi(strings.TrimPrefix(journal.TempKey, "NEW-")); err == nil {
+			m.tempIssueSeq = max(m.tempIssueSeq, sequence)
+		}
+		m.replaceIssue(key, projection)
+		return
+	}
+	original := taskContent{Summary: journal.Issue.Summary, Description: journal.Issue.Description}
+	desired := taskContent{Summary: projection.Summary, Description: projection.Description}
+	m.pendingTaskUpdates[journal.IssueKey] = pendingTaskUpdate{Original: original, Desired: desired}
+	m.replaceIssue(journal.IssueKey, projection)
+}
+
+func (m *Model) selectedTaskSave() (tasksave.Journal, bool) {
+	issue, ok := m.selectedIssue()
+	if !ok {
+		return tasksave.Journal{}, false
+	}
+	for _, journal := range m.taskSaves {
+		if issue.Key == journal.TempKey || issue.Key == journal.IssueKey || issue.Key == journal.Projection().Key {
+			return journal, true
+		}
+	}
+	return tasksave.Journal{}, false
+}
+
+func (m *Model) discardTaskSaveProjection(journal tasksave.Journal) {
+	projection := journal.Projection()
+	delete(m.pendingCreates, projection.Key)
+	delete(m.pendingCreates, journal.TempKey)
+	delete(m.pendingTaskUpdates, journal.IssueKey)
+	if journal.Kind == tasksave.KindCreate {
+		m.removeIssue(projection.Key)
+		if projection.Key != journal.TempKey {
+			m.removeIssue(journal.TempKey)
+		}
+		return
+	}
+	m.replaceIssue(journal.IssueKey, journal.Issue)
 }
 
 func (m *Model) replaceIssue(oldKey string, next jira.Issue) {

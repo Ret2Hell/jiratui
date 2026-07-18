@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -108,7 +109,7 @@ func Default() Config {
 			Mouse:      true,
 			Icons:      true,
 			Animations: true,
-			Theme:      "default-dark",
+			Theme:      "default",
 		},
 	}
 }
@@ -155,21 +156,71 @@ func Load(path string) (Config, string, error) {
 	return cfg, resolved, nil
 }
 
-// Save writes cfg to path using user-only permissions.
+// Save atomically writes cfg to path using user-only permissions.
 func Save(path string, cfg Config) error {
 	resolved, err := Path(path)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(resolved), 0o700); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
-	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	if err := os.WriteFile(resolved, data, 0o600); err != nil {
+
+	dir := filepath.Dir(resolved)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary config: %w", err)
+	}
+	tmpName := tmp.Name()
+	closed := false
+	remove := true
+	defer func() {
+		if !closed {
+			_ = tmp.Close()
+		}
+		if remove {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if err := tmp.Chmod(0o600); err != nil {
+		return fmt.Errorf("set temporary config permissions: %w", err)
+	}
+	n, err := tmp.Write(data)
+	if err != nil {
 		return fmt.Errorf("write config: %w", err)
+	}
+	if n != len(data) {
+		return fmt.Errorf("write config: %w", io.ErrShortWrite)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("sync config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		closed = true
+		return fmt.Errorf("close config: %w", err)
+	}
+	closed = true
+	if err := os.Rename(tmpName, resolved); err != nil {
+		return fmt.Errorf("replace config: %w", err)
+	}
+	remove = false
+
+	parent, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("open config dir for sync: %w", err)
+	}
+	if err := parent.Sync(); err != nil {
+		_ = parent.Close()
+		return fmt.Errorf("sync config dir: %w", err)
+	}
+	if err := parent.Close(); err != nil {
+		return fmt.Errorf("close config dir: %w", err)
 	}
 	return nil
 }

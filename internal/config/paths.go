@@ -19,6 +19,15 @@ func Path(explicit string) (string, error) {
 	return filepath.Join(base, AppName, "config.yaml"), nil
 }
 
+// ThemeDir returns the themes directory adjacent to the resolved config file.
+func ThemeDir(configPath string) (string, error) {
+	resolved, err := Path(configPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(resolved), "themes"), nil
+}
+
 // StateDir returns the directory for mutable state and logs.
 func StateDir() (string, error) {
 	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {

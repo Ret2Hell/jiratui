@@ -32,6 +32,8 @@ func (m *Model) View() tea.View {
 			content = m.renderReport()
 		case screenHelp:
 			content = m.renderKeybindingsModal()
+		case screenTheme:
+			content = m.renderThemePicker()
 		default:
 			content = m.renderMain()
 		}
@@ -60,6 +62,8 @@ func (m *Model) minimumScreenSize() (int, int) {
 	case screenReport:
 		return 40, 10
 	case screenHelp:
+		return 30, 10
+	case screenTheme:
 		return 30, 10
 	default:
 		return 20, 6
@@ -330,7 +334,18 @@ func (m *Model) renderCreateModal() string {
 	}
 	descriptionFooter := ""
 	if m.createFocus == 1 {
-		descriptionFooter = "ctrl+s save  •  esc cancel"
+		switch {
+		case m.imagePastePending:
+			descriptionFooter = m.spinner.View() + " reading clipboard  •  esc cancel"
+		case !m.editingDescription.Editable:
+			descriptionFooter = "read-only: " + m.editingDescription.UnsupportedReason
+		case m.attachmentMetaLoading:
+			descriptionFooter = "checking Jira attachment limits  •  ctrl+s save  •  esc cancel"
+		case !m.imagePasteAvailable:
+			descriptionFooter = m.imagePasteUnavailableReason + "  •  ctrl+s save  •  esc cancel"
+		default:
+			descriptionFooter = "ctrl+o paste image  •  ctrl+s save  •  esc cancel"
+		}
 	}
 	summaryPanel := m.renderPanelSpec(panelSpec{
 		Title:   title + " · Summary",

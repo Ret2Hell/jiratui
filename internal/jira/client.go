@@ -8,8 +8,12 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -216,6 +220,21 @@ func (c *Client) SearchUpdatedIssues(ctx context.Context, projectKey string, spr
 	return c.searchIssues(ctx, jql, fields, storyPointsFieldID)
 }
 
+// Issue returns one Jira issue with its structured description.
+func (c *Client) Issue(ctx context.Context, issueKey, storyPointsFieldID string) (Issue, error) {
+	fields := []string{"summary", "description", "status", "assignee", "issuetype", "updated"}
+	if storyPointsFieldID != "" {
+		fields = append(fields, storyPointsFieldID)
+	}
+	path := fmt.Sprintf("/rest/api/3/issue/%s", url.PathEscape(issueKey))
+	query := url.Values{"fields": []string{strings.Join(fields, ",")}}
+	var raw issueJSON
+	if err := c.do(ctx, http.MethodGet, path, query, nil, &raw); err != nil {
+		return Issue{}, err
+	}
+	return parseIssue(raw, storyPointsFieldID), nil
+}
+
 // CreateTask creates a Jira Task. Add it to a sprint with AddIssuesToSprint afterwards.
 func (c *Client) CreateTask(ctx context.Context, input CreateTaskInput) (Issue, error) {
 	fields := map[string]any{
@@ -226,8 +245,12 @@ func (c *Client) CreateTask(ctx context.Context, input CreateTaskInput) (Issue, 
 	if input.AssigneeID != "" {
 		fields["assignee"] = map[string]string{"accountId": input.AssigneeID}
 	}
-	if input.Description != "" {
-		fields["description"] = textToADF(input.Description)
+	if input.Description.EditorText != "" {
+		description, err := descriptionToADF(input.Description, true)
+		if err != nil {
+			return Issue{}, fmt.Errorf("build Jira description: %w", err)
+		}
+		fields["description"] = description
 	}
 	if input.StoryPoints != nil && input.StoryPointsID != "" {
 		fields[input.StoryPointsID] = *input.StoryPoints
@@ -237,10 +260,111 @@ func (c *Client) CreateTask(ctx context.Context, input CreateTaskInput) (Issue, 
 		ID  string `json:"id"`
 		Key string `json:"key"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/rest/api/3/issue", nil, map[string]any{"fields": fields}, &raw); err != nil {
+	payload := map[string]any{"fields": fields}
+	if input.SaveID != "" {
+		payload["properties"] = []any{map[string]any{
+			"key":   "jiratui.task-save",
+			"value": map[string]string{"id": input.SaveID},
+		}}
+	}
+	if err := c.do(ctx, http.MethodPost, "/rest/api/3/issue", nil, payload, &raw); err != nil {
 		return Issue{}, err
 	}
-	return Issue{ID: raw.ID, Key: raw.Key, Summary: input.Summary, Description: input.Description, StoryPoints: input.StoryPoints}, nil
+	return Issue{
+		ID:                 raw.ID,
+		Key:                raw.Key,
+		Summary:            input.Summary,
+		Description:        input.Description.EditorText,
+		DescriptionContent: input.Description,
+		StoryPoints:        input.StoryPoints,
+	}, nil
+}
+
+// FindTaskBySaveID reconciles a create whose Jira response may have been lost.
+func (c *Client) FindTaskBySaveID(ctx context.Context, projectKey, saveID string, createdAfter time.Time) (Issue, bool, error) {
+	jql := fmt.Sprintf(`project = %q AND created >= %q ORDER BY created DESC`, projectKey, createdAfter.UTC().Format("2006-01-02 15:04"))
+	issues, err := c.searchIssues(ctx, jql, []string{"summary", "description", "status", "assignee", "issuetype", "updated"}, "")
+	if err != nil {
+		return Issue{}, false, err
+	}
+	for _, issue := range issues {
+		path := fmt.Sprintf("/rest/api/3/issue/%s/properties", url.PathEscape(issue.Key))
+		var properties struct {
+			Keys []struct {
+				Key string `json:"key"`
+			} `json:"keys"`
+		}
+		if err := c.do(ctx, http.MethodGet, path, nil, nil, &properties); err != nil {
+			return Issue{}, false, err
+		}
+		if !slices.ContainsFunc(properties.Keys, func(property struct {
+			Key string `json:"key"`
+		}) bool {
+			return property.Key == "jiratui.task-save"
+		}) {
+			continue
+		}
+		var property struct {
+			Value struct {
+				ID string `json:"id"`
+			} `json:"value"`
+		}
+		if err := c.do(ctx, http.MethodGet, path+"/jiratui.task-save", nil, nil, &property); err != nil {
+			return Issue{}, false, err
+		}
+		if property.Value.ID == saveID {
+			return issue, true, nil
+		}
+	}
+	return Issue{}, false, nil
+}
+
+// FindAttachmentByFilename reconciles an attachment upload whose response may have been lost.
+func (c *Client) FindAttachmentByFilename(ctx context.Context, issueKey, filename string, source DescriptionImage) (DescriptionImage, bool, error) {
+	path := fmt.Sprintf("/rest/api/3/issue/%s", url.PathEscape(issueKey))
+	query := url.Values{"fields": []string{"attachment"}}
+	var raw struct {
+		Fields struct {
+			Attachments []struct {
+				ID       string `json:"id"`
+				Filename string `json:"filename"`
+				Content  string `json:"content"`
+				MIMEType string `json:"mimeType"`
+			} `json:"attachment"`
+		} `json:"fields"`
+	}
+	if err := c.do(ctx, http.MethodGet, path, query, nil, &raw); err != nil {
+		return DescriptionImage{}, false, err
+	}
+	for _, attachment := range raw.Fields.Attachments {
+		if attachment.Filename != filename {
+			continue
+		}
+		if attachment.ID == "" || attachment.Content == "" {
+			return DescriptionImage{}, false, errors.New("jira returned incomplete attachment metadata")
+		}
+		source.AttachmentID = attachment.ID
+		source.Filename = attachment.Filename
+		source.URL = attachment.Content
+		if attachment.MIMEType != "" {
+			source.MIMEType = attachment.MIMEType
+		}
+		source.Data = nil
+		return source, true, nil
+	}
+	return DescriptionImage{}, false, nil
+}
+
+// AttachmentMeta returns whether attachments are enabled and the tenant upload limit in bytes.
+func (c *Client) AttachmentMeta(ctx context.Context) (AttachmentMeta, error) {
+	var raw struct {
+		Enabled     bool `json:"enabled"`
+		UploadLimit int  `json:"uploadLimit"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/rest/api/3/attachment/meta", nil, nil, &raw); err != nil {
+		return AttachmentMeta{}, err
+	}
+	return AttachmentMeta{Enabled: raw.Enabled, UploadLimit: raw.UploadLimit}, nil
 }
 
 // AddIssuesToSprint adds issues to a Jira sprint.
@@ -287,12 +411,102 @@ func (c *Client) TransitionIssue(ctx context.Context, issueKey, transitionID str
 
 // UpdateTask updates an issue's summary and description.
 func (c *Client) UpdateTask(ctx context.Context, issueKey, summary, description string) error {
-	fields := map[string]any{"summary": summary, "description": nil}
-	if description != "" {
-		fields["description"] = textToADF(description)
+	content := PlainDescription(description)
+	return c.UpdateTaskFields(ctx, issueKey, &summary, &content)
+}
+
+// UpdateTaskFields updates only the supplied task fields.
+func (c *Client) UpdateTaskFields(ctx context.Context, issueKey string, summary *string, description *Description) error {
+	fields := make(map[string]any)
+	if summary != nil {
+		fields["summary"] = *summary
+	}
+	if description != nil {
+		fields["description"] = nil
+		if description.EditorText != "" {
+			adf, err := descriptionToADF(*description, false)
+			if err != nil {
+				return fmt.Errorf("build Jira description: %w", err)
+			}
+			fields["description"] = adf
+		}
+	}
+	if len(fields) == 0 {
+		return nil
 	}
 	path := fmt.Sprintf("/rest/api/3/issue/%s", url.PathEscape(issueKey))
 	return c.do(ctx, http.MethodPut, path, nil, map[string]any{"fields": fields}, nil)
+}
+
+// AddAttachment uploads an image attachment and returns its description media metadata.
+func (c *Client) AddAttachment(ctx context.Context, issueKey string, image DescriptionImage) (DescriptionImage, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": image.Filename}))
+	contentType := image.MIMEType
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	header.Set("Content-Type", contentType)
+	part, err := writer.CreatePart(header)
+	if err != nil {
+		return DescriptionImage{}, fmt.Errorf("create attachment form: %w", err)
+	}
+	if _, err := part.Write(image.Data); err != nil {
+		return DescriptionImage{}, fmt.Errorf("write attachment form: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return DescriptionImage{}, fmt.Errorf("close attachment form: %w", err)
+	}
+	path := fmt.Sprintf("/rest/api/3/issue/%s/attachments", url.PathEscape(issueKey))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, &body)
+	if err != nil {
+		return DescriptionImage{}, fmt.Errorf("create attachment request: %w", err)
+	}
+	req.SetBasicAuth(c.username, c.token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Atlassian-Token", "no-check")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return DescriptionImage{}, fmt.Errorf("upload Jira attachment: %w", err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return DescriptionImage{}, fmt.Errorf("read attachment response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return DescriptionImage{}, jiraHTTPError(resp.StatusCode, data)
+	}
+	var attachments []struct {
+		ID       string `json:"id"`
+		Filename string `json:"filename"`
+		Content  string `json:"content"`
+		MIMEType string `json:"mimeType"`
+	}
+	if err := json.Unmarshal(data, &attachments); err != nil {
+		return DescriptionImage{}, fmt.Errorf("decode attachment response: %w", err)
+	}
+	if len(attachments) == 0 {
+		return DescriptionImage{}, errors.New("jira returned no attachment metadata")
+	}
+	if attachments[0].ID == "" || attachments[0].Content == "" {
+		return DescriptionImage{}, errors.New("jira returned incomplete attachment metadata")
+	}
+	filename := attachments[0].Filename
+	if filename == "" {
+		filename = image.Filename
+	}
+	image.AttachmentID = attachments[0].ID
+	image.Filename = filename
+	image.URL = attachments[0].Content
+	if attachments[0].MIMEType != "" {
+		image.MIMEType = attachments[0].MIMEType
+	}
+	image.Data = nil
+	return image, nil
 }
 
 // DeleteTask permanently deletes an issue.
@@ -402,17 +616,4 @@ func jiraHTTPError(status int, data []byte) error {
 		}
 	}
 	return fmt.Errorf("jira API error %d: %s", status, strings.TrimSpace(string(data)))
-}
-
-func textToADF(text string) map[string]any {
-	lines := strings.SplitSeq(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	var content []any
-	for line := range lines {
-		paragraph := map[string]any{"type": "paragraph"}
-		if line != "" {
-			paragraph["content"] = []any{map[string]any{"type": "text", "text": line}}
-		}
-		content = append(content, paragraph)
-	}
-	return map[string]any{"type": "doc", "version": 1, "content": content}
 }

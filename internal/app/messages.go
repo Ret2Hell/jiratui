@@ -5,6 +5,7 @@ import (
 	"github.com/Ret2Hell/jiratui/internal/jira"
 	"github.com/Ret2Hell/jiratui/internal/localstore"
 	"github.com/Ret2Hell/jiratui/internal/service"
+	"github.com/Ret2Hell/jiratui/internal/tasksave"
 )
 
 type cacheLoadedMsg struct {
@@ -19,20 +20,33 @@ type sprintLoadedMsg struct {
 	Data service.SprintData
 }
 
-type taskCreatedMsg struct {
-	TempKey string
-	Issue   jira.Issue
+type attachmentMetaLoadedMsg struct {
+	Meta jira.AttachmentMeta
+	Err  error
 }
 
-type taskCreateFailedMsg struct {
-	TempKey string
+type taskJournalsLoadedMsg struct {
+	Journals []tasksave.Journal
+	Expired  []tasksave.Journal
+	Err      error
+}
+
+type taskSaveFinishedMsg struct {
+	Journal tasksave.Journal
 	Err     error
 }
 
-type taskUpdatedMsg struct {
-	Key         string
-	Summary     string
-	Description string
+type taskSaveAbandonedMsg struct {
+	Journal tasksave.Journal
+	Expired bool
+	Err     error
+}
+
+type descriptionImagePastedMsg struct {
+	SessionID uint64
+	Offset    int
+	Image     jira.DescriptionImage
+	Err       error
 }
 
 type taskDeletedMsg struct {
@@ -42,15 +56,6 @@ type taskDeletedMsg struct {
 type taskDeleteFailedMsg struct {
 	Key string
 	Err error
-}
-
-type taskUpdateFailedMsg struct {
-	Key                 string
-	Summary             string
-	Description         string
-	OriginalSummary     string
-	OriginalDescription string
-	Err                 error
 }
 
 type issueTransitionedMsg struct {
@@ -90,6 +95,15 @@ type jiraSetupSavedMsg struct {
 type setupSavedMsg struct {
 	Config  config.Config
 	Service service.Service
+}
+
+type themeSavedMsg struct {
+	Name string
+}
+
+type themeSaveFailedMsg struct {
+	Name string
+	Err  error
 }
 
 type errMsg struct {

@@ -8,30 +8,34 @@ import (
 type commandID string
 
 const (
-	cmdQuit     commandID = "quit"
-	cmdHelp     commandID = "help"
-	cmdRefresh  commandID = "refresh"
-	cmdFilter   commandID = "filter"
-	cmdNew      commandID = "new"
-	cmdEdit     commandID = "edit"
-	cmdDelete   commandID = "delete"
-	cmdPoints   commandID = "points"
-	cmdTodo     commandID = "todo"
-	cmdProgress commandID = "progress"
-	cmdDone     commandID = "done"
-	cmdReport   commandID = "report"
-	cmdFocus    commandID = "focus"
-	cmdUp       commandID = "up"
-	cmdDown     commandID = "down"
-	cmdPageUp   commandID = "page-up"
-	cmdPageDown commandID = "page-down"
-	cmdHome     commandID = "home"
-	cmdEnd      commandID = "end"
-	cmdSave     commandID = "save"
-	cmdCancel   commandID = "cancel"
-	cmdChange   commandID = "change"
-	cmdSelect   commandID = "select"
-	cmdClear    commandID = "clear"
+	cmdQuit        commandID = "quit"
+	cmdHelp        commandID = "help"
+	cmdRefresh     commandID = "refresh"
+	cmdFilter      commandID = "filter"
+	cmdNew         commandID = "new"
+	cmdEdit        commandID = "edit"
+	cmdDelete      commandID = "delete"
+	cmdPoints      commandID = "points"
+	cmdTodo        commandID = "todo"
+	cmdProgress    commandID = "progress"
+	cmdDone        commandID = "done"
+	cmdReport      commandID = "report"
+	cmdTheme       commandID = "theme"
+	cmdFocus       commandID = "focus"
+	cmdUp          commandID = "up"
+	cmdDown        commandID = "down"
+	cmdPageUp      commandID = "page-up"
+	cmdPageDown    commandID = "page-down"
+	cmdHome        commandID = "home"
+	cmdEnd         commandID = "end"
+	cmdSave        commandID = "save"
+	cmdPasteImage  commandID = "paste-image"
+	cmdRetrySave   commandID = "retry-save"
+	cmdAbandonSave commandID = "abandon-save"
+	cmdCancel      commandID = "cancel"
+	cmdChange      commandID = "change"
+	cmdSelect      commandID = "select"
+	cmdClear       commandID = "clear"
 )
 
 type binding struct {
@@ -57,8 +61,11 @@ func mainBindings() []binding {
 		{cmdProgress, []string{"p", "i"}, "move to In Progress", "In Progress", true, 6},
 		{cmdDone, []string{"d", "x"}, "move to Done", "Done", true, 6},
 		{cmdReport, []string{"m", "shift+m"}, "open daily report", "Daily report", false, 5},
+		{cmdTheme, []string{"shift+t"}, "choose application theme", "Theme", false, 5},
 		{cmdFilter, []string{"/"}, "filter tickets", "Filter", false, 7},
 		{cmdRefresh, []string{"r"}, "refresh tickets", "Refresh", false, 4},
+		{cmdRetrySave, []string{"ctrl+r"}, "retry the selected task save", "Retry save", true, 9},
+		{cmdAbandonSave, []string{"shift+a"}, "abandon the selected task save", "Abandon save", true, 9},
 		{cmdFocus, []string{"tab"}, "switch panel focus", "Switch panel", false, 5},
 		{cmdUp, []string{"up", "k"}, "move up", "Up", false, 0},
 		{cmdDown, []string{"down", "j"}, "move down", "Down", false, 0},
@@ -74,6 +81,7 @@ func mainBindings() []binding {
 func createBindings() []binding {
 	return []binding{
 		{cmdSave, []string{"enter", "ctrl+s"}, "create or save the task", "Save", true, 10},
+		{cmdPasteImage, []string{"ctrl+o"}, "paste a clipboard image into the description", "Paste image", true, 8},
 		{cmdFocus, []string{"tab", "shift+tab"}, "move between fields", "Fields", false, 5},
 		{cmdCancel, []string{"esc"}, "close without saving", "Cancel", true, 10},
 	}
@@ -123,14 +131,23 @@ func keybindingsModalBindings() []binding {
 	}
 }
 
+func themePickerBindings() []binding {
+	return []binding{
+		{cmdUp, []string{"up", "k"}, "preview previous theme", "Up", false, 5},
+		{cmdDown, []string{"down", "j"}, "preview next theme", "Down", false, 5},
+		{cmdPageUp, []string{"pgup"}, "preview one page up", "Page up", false, 5},
+		{cmdPageDown, []string{"pgdown"}, "preview one page down", "Page down", false, 5},
+		{cmdHome, []string{"home", "g"}, "preview the first theme", "First", false, 5},
+		{cmdEnd, []string{"end", "shift+g"}, "preview the last theme", "Last", false, 5},
+		{cmdSave, []string{"enter"}, "select this theme", "Select", true, 10},
+		{cmdCancel, []string{"esc", "q", "shift+t"}, "close without changing the theme", "Cancel", true, 10},
+	}
+}
+
 func (m *Model) activeBindings() []binding {
 	switch m.screen {
 	case screenCreate:
-		bindings := createBindings()
-		if m.createFocus == 1 {
-			bindings[0].Keys = []string{"ctrl+s"}
-		}
-		return bindings
+		return m.activeCreateBindings()
 	case screenDelete:
 		return deleteBindings()
 	case screenPoints:
@@ -139,6 +156,8 @@ func (m *Model) activeBindings() []binding {
 		return reportBindings()
 	case screenHelp:
 		return keybindingsModalBindings()
+	case screenTheme:
+		return themePickerBindings()
 	case screenSetup:
 		label := "Continue"
 		if m.setupStage == 1 {
@@ -148,9 +167,42 @@ func (m *Model) activeBindings() []binding {
 	}
 
 	bindings := mainBindings()
+	if m.taskJournalsLoading {
+		bindings = slices.DeleteFunc(bindings, func(item binding) bool {
+			return slices.Contains([]commandID{cmdNew, cmdEdit, cmdDelete, cmdPoints, cmdTodo, cmdProgress, cmdDone}, item.Command)
+		})
+	}
+	_, hasTaskSave := m.selectedTaskSave()
+	if !hasTaskSave {
+		bindings = slices.DeleteFunc(bindings, func(item binding) bool {
+			return item.Command == cmdRetrySave || item.Command == cmdAbandonSave
+		})
+	} else {
+		bindings = slices.DeleteFunc(bindings, func(item binding) bool {
+			return slices.Contains([]commandID{cmdEdit, cmdDelete, cmdPoints, cmdTodo, cmdProgress, cmdDone}, item.Command)
+		})
+	}
 	if len(m.visibleIssues()) == 0 {
 		bindings = slices.DeleteFunc(bindings, func(item binding) bool {
 			return slices.Contains([]commandID{cmdEdit, cmdDelete, cmdPoints, cmdTodo, cmdProgress, cmdDone}, item.Command)
+		})
+	}
+	return bindings
+}
+
+func (m *Model) activeCreateBindings() []binding {
+	bindings := createBindings()
+	if m.createFocus == 1 {
+		bindings[0].Keys = []string{"ctrl+s"}
+	} else {
+		bindings = slices.DeleteFunc(bindings, func(item binding) bool { return item.Command == cmdPasteImage })
+	}
+	if !m.editingDescription.Editable || !m.imagePasteAvailable || m.attachmentMetaLoading {
+		bindings = slices.DeleteFunc(bindings, func(item binding) bool { return item.Command == cmdPasteImage })
+	}
+	if m.imagePastePending {
+		bindings = slices.DeleteFunc(bindings, func(item binding) bool {
+			return item.Command == cmdSave || item.Command == cmdPasteImage
 		})
 	}
 	return bindings
@@ -202,6 +254,10 @@ func keyLabel(key string) string {
 		return "D"
 	case "shift+g":
 		return "G"
+	case "shift+a":
+		return "A"
+	case "shift+t":
+		return "T"
 	default:
 		return key
 	}

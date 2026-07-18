@@ -9,6 +9,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/Ret2Hell/jiratui/internal/imageclip"
+	"github.com/Ret2Hell/jiratui/internal/jira"
 	"github.com/Ret2Hell/jiratui/internal/service"
 )
 
@@ -119,6 +121,43 @@ func TestEditModalLoadsDescriptionAndUsesTwoPanelFocus(t *testing.T) {
 	m.updateCreateMouse(tea.MouseClickMsg{X: descriptionRect.X + 1, Y: descriptionRect.Y + 1, Button: tea.MouseLeft})
 	if m.createFocus != 1 {
 		t.Fatalf("description click focus = %d", m.createFocus)
+	}
+}
+
+type imageClipboardStub struct {
+	image imageclip.Image
+	err   error
+}
+
+func (s imageClipboardStub) ReadImage(context.Context) (imageclip.Image, error) {
+	return s.image, s.err
+}
+
+func TestDescriptionImagePasteInsertsReference(t *testing.T) {
+	m := newMainTestModel(t, 120, 30)
+	m.openCreate()
+	m.focusCreate(1)
+	m.imageClipboard = imageClipboardStub{image: imageclip.Image{
+		Filename: "screenshot.png",
+		MIMEType: "image/png",
+		Data:     []byte("png"),
+		Width:    640,
+		Height:   480,
+	}}
+
+	key := tea.KeyPressMsg(tea.Key{Code: 'o', Mod: tea.ModCtrl})
+	cmd := m.updateCreate(key, key)
+	if cmd == nil {
+		t.Fatal("ctrl+o did not start image paste")
+	}
+	msg := cmd()
+	m.Update(msg)
+	if len(m.editingDescription.Images) != 1 || m.editingDescription.Images[0].Filename != "screenshot.png" {
+		t.Fatalf("description images = %#v", m.editingDescription.Images)
+	}
+	want := jira.ImageReferenceToken(m.editingDescription.Images[0].ID, "screenshot.png")
+	if got := m.createDescription.Value(); got != want {
+		t.Fatalf("description = %q, want %q", got, want)
 	}
 }
 
