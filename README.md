@@ -92,5 +92,8 @@ Press `?` to open the contextual keybindings menu. Use `↑`/`↓` to select an 
 | `p` / `i` | move to In Progress |
 | `x` / `d` | move to Done |
 | `m` | open daily report draft |
-| `ctrl+s` | save report draft |
+| `ctrl+s` | save task or report draft |
+| `ctrl+o` | paste a clipboard image into the focused task description |
+| `ctrl+r` | retry the selected Partial Save |
+| `A` | abandon the selected Partial Save while retaining accepted Jira changes |
 | `esc` | cancel/close |
