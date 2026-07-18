@@ -77,6 +77,7 @@ Press `?` to open the contextual keybindings menu. Use `↑`/`↓` to select an 
 | `q` | quit |
 | `?` | open grouped keybindings |
 | `r` | refresh tickets |
+| `T` | choose application theme |
 | `/` | filter tickets |
 | `tab` | switch panel focus |
 | `↑` / `↓`, `j` / `k` | move selection or scroll focused panel |
