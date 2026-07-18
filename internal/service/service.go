@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Ret2Hell/jiratui/internal/config"
 	"github.com/Ret2Hell/jiratui/internal/jira"
 	"github.com/Ret2Hell/jiratui/internal/mail"
 	"github.com/Ret2Hell/jiratui/internal/report"
+	"github.com/Ret2Hell/jiratui/internal/tasksave"
 )
 
 // SprintData is the data needed by the main screen.
@@ -27,18 +29,11 @@ type DailyDraft struct {
 	Body    string
 }
 
-// TaskInput contains TUI task creation fields.
-type TaskInput struct {
-	Summary     string
-	Description string
-	StoryPoints *float64
-}
-
 // Service defines the app workflow operations.
 type Service interface {
 	LoadSprint(context.Context) (SprintData, error)
-	CreateTask(context.Context, TaskInput) (jira.Issue, error)
-	UpdateTask(context.Context, string, TaskInput) error
+	SaveTask(context.Context, tasksave.Journal, func(tasksave.Journal) error) (tasksave.Journal, error)
+	AttachmentMeta(context.Context) (jira.AttachmentMeta, error)
 	DeleteTask(context.Context, string) error
 	Transitions(context.Context, string) ([]jira.Transition, error)
 	TransitionIssue(context.Context, string, string) error
@@ -79,6 +74,7 @@ type JiraService struct {
 	jira       *jira.Client
 	mail       mail.Client
 	lastSprint jira.Sprint
+	mu         sync.RWMutex
 }
 
 // LoadSprint loads current active sprint issues assigned to the user.
@@ -87,7 +83,9 @@ func (s *JiraService) LoadSprint(ctx context.Context) (SprintData, error) {
 	if err != nil {
 		return SprintData{}, err
 	}
+	s.mu.Lock()
 	s.lastSprint = sprint
+	s.mu.Unlock()
 	issues, err := s.jira.SearchMySprintIssues(ctx, s.cfg.Jira.ProjectKey, sprint.ID, s.cfg.Jira.StoryPointsFieldID)
 	if err != nil {
 		return SprintData{}, err
@@ -95,50 +93,160 @@ func (s *JiraService) LoadSprint(ctx context.Context) (SprintData, error) {
 	return SprintData{ProjectName: s.cfg.Jira.ProjectName, Sprint: sprint, Issues: issues}, nil
 }
 
-// CreateTask creates a task assigned to the current Jira account and adds it to the active sprint.
-func (s *JiraService) CreateTask(ctx context.Context, input TaskInput) (jira.Issue, error) {
-	if strings.TrimSpace(input.Summary) == "" {
-		return jira.Issue{}, fmt.Errorf("summary is required")
+// SaveTask resumes a journal and persists each accepted Jira step before continuing.
+func (s *JiraService) SaveTask(ctx context.Context, journal tasksave.Journal, persist func(tasksave.Journal) error) (tasksave.Journal, error) {
+	if strings.TrimSpace(journal.Draft.Summary) == "" {
+		return journal, fmt.Errorf("summary is required")
 	}
-	assignee, err := s.currentUser(ctx)
-	if err != nil {
-		return jira.Issue{}, err
+	if journal.Draft.WriteDescription {
+		description, err := jira.ParseDescriptionEditor(journal.Draft.Description.EditorText, journal.Draft.Description)
+		if err != nil {
+			return journal, err
+		}
+		journal.Draft.Description = description
 	}
-	sprint, err := s.jira.ActiveSprint(ctx, s.cfg.Jira.BoardID)
-	if err != nil {
-		return jira.Issue{}, err
+	checkpoint := func(accepted bool) error {
+		if accepted {
+			journal.LastAcceptedAt = time.Now()
+		}
+		if persist == nil {
+			return nil
+		}
+		return persist(journal)
 	}
-	issue, err := s.jira.CreateTask(ctx, jira.CreateTaskInput{
-		ProjectKey:      s.cfg.Jira.ProjectKey,
-		IssueTypeID:     s.cfg.Jira.IssueTypeTaskID,
-		AssigneeID:      assignee.AccountID,
-		Summary:         strings.TrimSpace(input.Summary),
-		Description:     strings.TrimSpace(input.Description),
-		StoryPoints:     input.StoryPoints,
-		StoryPointsID:   s.cfg.Jira.StoryPointsFieldID,
-		AdditionalField: s.cfg.Jira.CreateDefaults,
-	})
-	if err != nil {
-		return jira.Issue{}, err
+
+	if journal.Kind == tasksave.KindCreate && !journal.IssueCreated {
+		assignee := jira.User{
+			AccountID:   journal.AssigneeID,
+			DisplayName: s.cfg.Jira.DisplayName,
+			Email:       s.cfg.Jira.Username,
+		}
+		if assignee.AccountID == "" {
+			var err error
+			assignee, err = s.currentUser(ctx)
+			if err != nil {
+				return journal, err
+			}
+			journal.AssigneeID = assignee.AccountID
+		}
+		if journal.SprintID == 0 {
+			sprint, err := s.jira.ActiveSprint(ctx, s.cfg.Jira.BoardID)
+			if err != nil {
+				return journal, err
+			}
+			journal.SprintID = sprint.ID
+		}
+		if err := checkpoint(false); err != nil {
+			return journal, fmt.Errorf("persist task save before Jira create: %w", err)
+		}
+		created, found, err := s.jira.FindTaskBySaveID(ctx, s.cfg.Jira.ProjectKey, journal.ID, journal.CreatedAt.Add(-5*time.Minute))
+		if err != nil {
+			return journal, fmt.Errorf("reconcile Jira task create: %w", err)
+		}
+		if !found {
+			created, err = s.jira.CreateTask(ctx, jira.CreateTaskInput{
+				ProjectKey:      s.cfg.Jira.ProjectKey,
+				IssueTypeID:     s.cfg.Jira.IssueTypeTaskID,
+				AssigneeID:      assignee.AccountID,
+				Summary:         journal.Draft.Summary,
+				Description:     journal.Draft.Description,
+				StoryPoints:     journal.Draft.StoryPoints,
+				StoryPointsID:   s.cfg.Jira.StoryPointsFieldID,
+				AdditionalField: s.cfg.Jira.CreateDefaults,
+				SaveID:          journal.ID,
+			})
+			if err != nil {
+				return journal, err
+			}
+		}
+		issue := journal.Projection()
+		issue.ID = created.ID
+		issue.Key = created.Key
+		issue.Assignee = &assignee
+		issue.IssueType = jira.IssueType{ID: s.cfg.Jira.IssueTypeTaskID, Name: "Task"}
+		issue.Status = jira.Status{Name: "To Do", Category: jira.StatusCategory{Key: "new", Name: "To Do"}}
+		journal.Issue = issue
+		journal.IssueKey = issue.Key
+		journal.IssueCreated = true
+		journal.ContentUpdated = len(journal.Draft.Description.ReferencedPendingImages()) == 0
+		if err := checkpoint(true); err != nil {
+			return journal, fmt.Errorf("created %s but could not checkpoint it: %w", issue.Key, err)
+		}
 	}
-	if err := s.jira.AssignIssue(ctx, issue.Key, assignee.AccountID); err != nil {
-		return issue, fmt.Errorf("created %s but could not assign it to you: %w", issue.Key, err)
+
+	if !journal.IssueCreated || journal.IssueKey == "" {
+		return journal, fmt.Errorf("task save has no Jira issue")
 	}
-	issue.Assignee = &assignee
-	issue.IssueType = jira.IssueType{ID: s.cfg.Jira.IssueTypeTaskID, Name: "Task"}
-	issue.Status = jira.Status{Name: "To Do", Category: jira.StatusCategory{Key: "new", Name: "To Do"}}
-	if err := s.jira.AddIssuesToSprint(ctx, sprint.ID, []string{issue.Key}); err != nil {
-		return issue, fmt.Errorf("created %s but could not add it to sprint: %w", issue.Key, err)
+	if journal.Kind == tasksave.KindCreate && !journal.AddedToSprint {
+		if err := s.jira.AddIssuesToSprint(ctx, journal.SprintID, []string{journal.IssueKey}); err != nil {
+			return journal, fmt.Errorf("created %s but could not add it to sprint: %w", journal.IssueKey, err)
+		}
+		journal.AddedToSprint = true
+		if err := checkpoint(true); err != nil {
+			return journal, fmt.Errorf("added %s to sprint but could not checkpoint it: %w", journal.IssueKey, err)
+		}
 	}
-	return issue, nil
+
+	if journal.Draft.WriteDescription {
+		for _, image := range journal.Draft.Description.ReferencedPendingImages() {
+			originalFilename := image.Filename
+			filename := attachmentFilename(image)
+			uploaded, found, err := s.jira.FindAttachmentByFilename(ctx, journal.IssueKey, filename, image)
+			if err != nil {
+				return journal, fmt.Errorf("reconcile description image %q: %w", originalFilename, err)
+			}
+			if !found {
+				image.Filename = filename
+				uploaded, err = s.jira.AddAttachment(ctx, journal.IssueKey, image)
+				if err != nil {
+					return journal, fmt.Errorf("upload description image %q: %w", originalFilename, err)
+				}
+			}
+			description, err := journal.Draft.Description.WithUploadedImage(uploaded)
+			if err != nil {
+				return journal, err
+			}
+			journal.Draft.Description = description
+			journal.Issue = journal.Projection()
+			if err := checkpoint(true); err != nil {
+				return journal, fmt.Errorf("uploaded description image %q but could not checkpoint it: %w", image.Filename, err)
+			}
+		}
+	}
+
+	if !journal.ContentUpdated {
+		var summary *string
+		var description *jira.Description
+		if journal.Kind == tasksave.KindUpdate && journal.Draft.WriteSummary {
+			summary = &journal.Draft.Summary
+		}
+		if journal.Draft.WriteDescription {
+			description = &journal.Draft.Description
+		}
+		if err := s.jira.UpdateTaskFields(ctx, journal.IssueKey, summary, description); err != nil {
+			return journal, fmt.Errorf("update %s content: %w", journal.IssueKey, err)
+		}
+		journal.ContentUpdated = true
+		journal.Issue = journal.Projection()
+		if err := checkpoint(true); err != nil {
+			journal.ContentUpdated = false
+			return journal, fmt.Errorf("updated %s but could not checkpoint it: %w", journal.IssueKey, err)
+		}
+	}
+	return journal, nil
 }
 
-// UpdateTask updates an issue's summary and description.
-func (s *JiraService) UpdateTask(ctx context.Context, issueKey string, input TaskInput) error {
-	if strings.TrimSpace(input.Summary) == "" {
-		return fmt.Errorf("summary is required")
+func attachmentFilename(image jira.DescriptionImage) string {
+	name := strings.TrimSpace(image.Filename)
+	if name == "" {
+		name = "image"
 	}
-	return s.jira.UpdateTask(ctx, issueKey, strings.TrimSpace(input.Summary), strings.TrimSpace(input.Description))
+	return "jiratui-" + image.ID + "-" + name
+}
+
+// AttachmentMeta returns Jira's attachment availability and tenant size limit.
+func (s *JiraService) AttachmentMeta(ctx context.Context) (jira.AttachmentMeta, error) {
+	return s.jira.AttachmentMeta(ctx)
 }
 
 // DeleteTask permanently deletes an issue.
@@ -194,10 +302,13 @@ func (s *JiraService) GenerateReport(ctx context.Context, issues []jira.Issue) (
 		changes = append(changes, issueChanges...)
 	}
 	now := time.Now().In(loc)
+	s.mu.RLock()
+	sprintName := s.lastSprint.Name
+	s.mu.RUnlock()
 	body := report.GenerateDaily(issues, changes, report.Options{
 		ProjectLabel:        s.cfg.Report.ProjectLabel,
 		ProjectName:         s.cfg.Jira.ProjectName,
-		SprintName:          s.lastSprint.Name,
+		SprintName:          sprintName,
 		DeliveryDefault:     s.cfg.Report.DeliveryDefault,
 		BlockersDefault:     s.cfg.Report.BlockersDefault,
 		TodoNextLimit:       s.cfg.Report.TodoNextLimit,
@@ -245,8 +356,6 @@ func (s *JiraService) currentUser(ctx context.Context) (jira.User, error) {
 	if strings.TrimSpace(user.AccountID) == "" {
 		return jira.User{}, fmt.Errorf("resolve current Jira user for assignment: missing account id")
 	}
-	s.cfg.Jira.AccountID = user.AccountID
-	s.cfg.Jira.DisplayName = user.DisplayName
 	return user, nil
 }
 

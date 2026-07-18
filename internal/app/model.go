@@ -13,9 +13,11 @@ import (
 	zone "github.com/lrstanley/bubblezone/v2"
 
 	"github.com/Ret2Hell/jiratui/internal/config"
+	"github.com/Ret2Hell/jiratui/internal/imageclip"
 	"github.com/Ret2Hell/jiratui/internal/jira"
 	"github.com/Ret2Hell/jiratui/internal/report"
 	"github.com/Ret2Hell/jiratui/internal/service"
+	"github.com/Ret2Hell/jiratui/internal/tasksave"
 )
 
 type screen int
@@ -89,6 +91,7 @@ type Model struct {
 	keybindingsFiltering bool
 	modalParent          screen
 	tempIssueSeq         int
+	cacheRevision        uint64
 	totals               report.PointTotals
 
 	filtering   bool
@@ -99,13 +102,21 @@ type Model struct {
 	setupFocus  int
 	setupStage  int
 
-	createSummary          textinput.Model
-	createDescription      textarea.Model
-	createFocus            int
-	editingTaskKey         string
-	editingTaskOriginal    string
-	editingTaskDescription string
-	deletingTaskKey        string
+	createSummary                  textinput.Model
+	createDescription              textarea.Model
+	createFocus                    int
+	imageClipboard                 imageclip.Reader
+	imageUploadLimit               int
+	imagePasteAvailable            bool
+	imagePasteUnavailableReason    string
+	attachmentMetaLoading          bool
+	editorSessionID                uint64
+	imagePastePending              bool
+	editingDescription             jira.Description
+	editingTaskKey                 string
+	editingTaskOriginal            string
+	editingTaskOriginalDescription jira.Description
+	deletingTaskKey                string
 
 	pointSelected         int
 	pointEditingKey       string
@@ -114,6 +125,10 @@ type Model struct {
 	pendingStatusOriginal map[string]jira.Status
 	pendingTaskUpdates    map[string]pendingTaskUpdate
 	pendingCreates        map[string]jira.Issue
+	taskSaves             map[string]tasksave.Journal
+	runningTaskSaves      map[string]bool
+	taskJournalsLoading   bool
+	discardedTaskSaves    []tasksave.Journal
 	localStatusChanges    map[string]jira.StatusChange
 
 	reportEditor  textarea.Model
@@ -132,6 +147,10 @@ func New(cfg config.Config, configPath string, svc service.Service, factory serv
 		configPath:            configPath,
 		factory:               factory,
 		service:               svc,
+		imageClipboard:        imageclip.SystemReader{},
+		imageUploadLimit:      imageclip.MaxImageBytes,
+		imagePasteAvailable:   forceSetup || svc == nil || !cfg.IsConfigured(),
+		attachmentMetaLoading: !forceSetup && svc != nil && cfg.IsConfigured(),
 		styles:                newStyles(),
 		zones:                 zone.New(),
 		spinner:               spinner.New(spinner.WithSpinner(spinner.Dot)),
@@ -140,6 +159,9 @@ func New(cfg config.Config, configPath string, svc service.Service, factory serv
 		pendingStatusOriginal: make(map[string]jira.Status),
 		pendingTaskUpdates:    make(map[string]pendingTaskUpdate),
 		pendingCreates:        make(map[string]jira.Issue),
+		taskSaves:             make(map[string]tasksave.Journal),
+		runningTaskSaves:      make(map[string]bool),
+		taskJournalsLoading:   !forceSetup && svc != nil && cfg.IsConfigured(),
 		localStatusChanges:    make(map[string]jira.StatusChange),
 		selectionSpring:       harmonica.NewSpring(harmonica.FPS(60), 10, 0.8),
 	}
@@ -164,7 +186,7 @@ func New(cfg config.Config, configPath string, svc service.Service, factory serv
 func (m *Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{func() tea.Msg { return m.spinner.Tick() }}
 	if m.screen == screenMain && m.service != nil {
-		cmds = append(cmds, m.loadCacheCmd(), m.loadSprintCmd())
+		cmds = append(cmds, m.loadCacheCmd(), m.loadTaskJournalsCmd(), m.loadAttachmentMetaCmd(), m.loadSprintCmd())
 	}
 	return tea.Batch(cmds...)
 }
@@ -379,6 +401,10 @@ func cloneFloat(value *float64) *float64 {
 
 func (m *Model) pendingSyncCount() int {
 	return len(m.pendingCreates) + len(m.pendingStatusOriginal) + len(m.pendingPointOriginals) + len(m.pendingTaskUpdates)
+}
+
+func isPartialSave(journal tasksave.Journal) bool {
+	return journal.IssueCreated || !journal.LastAcceptedAt.IsZero()
 }
 
 func pointIndex(points *float64) int {

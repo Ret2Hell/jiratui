@@ -127,10 +127,7 @@ func (m *Model) keybindingMenuGroups() []bindingGroup {
 	switch m.modalParent {
 	case screenCreate:
 		title = "Task form"
-		contextual = createBindings()
-		if m.createFocus == 1 {
-			contextual[0].Keys = []string{"ctrl+s"}
-		}
+		contextual = m.activeCreateBindings()
 	case screenDelete:
 		title, contextual = "Delete confirmation", deleteBindings()
 	case screenPoints:

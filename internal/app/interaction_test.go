@@ -5,11 +5,13 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Ret2Hell/jiratui/internal/jira"
+	"github.com/Ret2Hell/jiratui/internal/tasksave"
 )
 
 func newMainTestModel(t *testing.T, width, height int) *Model {
@@ -72,13 +74,61 @@ func TestPendingTaskContentSurvivesRefreshAndSuccess(t *testing.T) {
 		t.Fatalf("refresh replaced pending content: %#v", m.issues[0])
 	}
 
-	m.Update(taskUpdatedMsg{Key: key, Summary: "Optimistic summary", Description: "Optimistic description"})
+	journal := tasksave.Journal{
+		ID:             "save-test",
+		Kind:           tasksave.KindUpdate,
+		IssueKey:       key,
+		Issue:          m.issues[0],
+		Draft:          tasksave.Draft{Summary: "Optimistic summary", Description: jira.PlainDescription("Optimistic description"), WriteSummary: true, WriteDescription: true},
+		IssueCreated:   true,
+		AddedToSprint:  true,
+		ContentUpdated: true,
+	}
+	m.taskSaves[journal.ID] = journal
+	m.Update(taskSaveFinishedMsg{Journal: journal})
 	issue, _ := m.issueByKey(key)
 	if issue.Summary != "Optimistic summary" || issue.Description != "Optimistic description" {
 		t.Fatalf("success did not reapply content: %#v", issue)
 	}
 	if _, pending := m.pendingTaskUpdates[key]; pending {
 		t.Fatal("successful update remained pending")
+	}
+}
+
+func TestPartialSaveLocksTaskUntilAbandoned(t *testing.T) {
+	m := newMainTestModel(t, 120, 20)
+	issue := m.issues[0]
+	journal, err := tasksave.NewUpdate(issue, tasksave.Draft{
+		Summary: "Changed", Description: jira.PlainDescription(issue.Description), WriteSummary: true,
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.restoreTaskSave(journal)
+	commands := make(map[commandID]bool)
+	for _, binding := range m.activeBindings() {
+		commands[binding.Command] = true
+	}
+	if commands[cmdEdit] || commands[cmdDelete] || commands[cmdPoints] || !commands[cmdRetrySave] || !commands[cmdAbandonSave] {
+		t.Fatalf("Partial Save bindings = %#v", commands)
+	}
+
+	m.Update(taskSaveAbandonedMsg{Journal: journal})
+	restored, _ := m.issueByKey(issue.Key)
+	if restored.Summary != issue.Summary {
+		t.Fatalf("abandon retained unaccepted summary %q, want %q", restored.Summary, issue.Summary)
+	}
+}
+
+func TestUnsupportedDescriptionIgnoresBracketedPaste(t *testing.T) {
+	m := newMainTestModel(t, 120, 20)
+	m.openEdit()
+	m.focusCreate(1)
+	m.editingDescription = jira.Description{EditorText: "Preserved", Editable: false, UnsupportedReason: "rich text"}
+	m.createDescription.SetValue("Preserved")
+	m.updatePaste(tea.PasteMsg{Content: "changed"})
+	if got := m.createDescription.Value(); got != "Preserved" {
+		t.Fatalf("read-only description changed to %q", got)
 	}
 }
 

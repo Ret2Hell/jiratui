@@ -16,6 +16,7 @@ import (
 	"github.com/Ret2Hell/jiratui/internal/mail"
 	"github.com/Ret2Hell/jiratui/internal/report"
 	"github.com/Ret2Hell/jiratui/internal/service"
+	"github.com/Ret2Hell/jiratui/internal/tasksave"
 )
 
 func (m *Model) loadCacheCmd() tea.Cmd {
@@ -25,12 +26,36 @@ func (m *Model) loadCacheCmd() tea.Cmd {
 	}
 }
 
+func (m *Model) loadTaskJournalsCmd() tea.Cmd {
+	cfg := m.cfg
+	return func() tea.Msg {
+		journals, err := localstore.LoadTaskJournals(cfg)
+		active := journals[:0]
+		expired := make([]tasksave.Journal, 0)
+		for _, journal := range journals {
+			if journal.Complete() || journal.Expired(time.Now()) {
+				if !journal.Complete() {
+					expired = append(expired, journal)
+				}
+				if err := localstore.DeleteTaskJournal(cfg, journal.ID); err != nil {
+					return taskJournalsLoadedMsg{Err: err}
+				}
+				continue
+			}
+			active = append(active, journal)
+		}
+		return taskJournalsLoadedMsg{Journals: active, Expired: expired, Err: err}
+	}
+}
+
 func (m *Model) saveCacheCmd() tea.Cmd {
+	m.cacheRevision = max(m.cacheRevision+1, uint64(time.Now().UnixNano()))
 	state := localstore.State{
 		ProjectName: firstNonEmpty(m.projectName, m.cfg.Jira.ProjectName),
 		Sprint:      m.sprint,
 		Issues:      slices.Clone(m.issues),
 		Draft:       m.reportDraft,
+		Revision:    m.cacheRevision,
 	}
 	cfg := m.cfg
 	return func() tea.Msg {
@@ -56,31 +81,81 @@ func (m *Model) loadSprintCmd() tea.Cmd {
 	}
 }
 
+func (m *Model) loadAttachmentMetaCmd() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		meta, err := m.service.AttachmentMeta(ctx)
+		return attachmentMetaLoadedMsg{Meta: meta, Err: err}
+	}
+}
+
+func (m *Model) pasteDescriptionImageCmd() tea.Cmd {
+	if m.imagePastePending || !m.imagePasteAvailable {
+		return nil
+	}
+	clipboard := m.imageClipboard
+	sessionID := m.editorSessionID
+	offset := textareaOffset(m.createDescription.Value(), m.createDescription.Line(), m.createDescription.Column())
+	limit := m.imageUploadLimit
+	m.imagePastePending = true
+	return func() tea.Msg {
+		if clipboard == nil {
+			return descriptionImagePastedMsg{SessionID: sessionID, Offset: offset, Err: fmt.Errorf("image clipboard is unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		image, err := clipboard.ReadImage(ctx)
+		if err != nil {
+			return descriptionImagePastedMsg{SessionID: sessionID, Offset: offset, Err: err}
+		}
+		if limit > 0 && len(image.Data) > limit {
+			return descriptionImagePastedMsg{SessionID: sessionID, Offset: offset, Err: fmt.Errorf("clipboard image exceeds Jira's %.1f MiB attachment limit", float64(limit)/(1<<20))}
+		}
+		descriptionImage, err := jira.NewDescriptionImage(image.Filename, image.MIMEType, image.Data, image.Width, image.Height)
+		if err != nil {
+			return descriptionImagePastedMsg{SessionID: sessionID, Offset: offset, Err: err}
+		}
+		return descriptionImagePastedMsg{SessionID: sessionID, Offset: offset, Image: descriptionImage}
+	}
+}
+
 func (m *Model) createTaskCmd() tea.Cmd {
 	if m.service == nil {
 		return func() tea.Msg { return errMsg{Err: fmt.Errorf("service is not configured")} }
 	}
 	summary := strings.TrimSpace(m.createSummary.Value())
-	description := strings.TrimSpace(m.createDescription.Value())
 	if summary == "" {
 		return func() tea.Msg { return errMsg{Err: fmt.Errorf("summary is required")} }
+	}
+	description, err := jira.ParseDescriptionEditor(m.createDescription.Value(), m.editingDescription)
+	if err != nil {
+		return func() tea.Msg { return errMsg{Err: err} }
 	}
 	m.err = nil
 	m.tempIssueSeq++
 	tempKey := fmt.Sprintf("NEW-%d", m.tempIssueSeq)
 	issue := jira.Issue{
-		ID:          tempKey,
-		Key:         tempKey,
-		Summary:     summary,
-		Description: description,
-		Status:      optimisticStatus("new"),
-		IssueType:   jira.IssueType{ID: m.cfg.Jira.IssueTypeTaskID, Name: "Task"},
+		ID:                 tempKey,
+		Key:                tempKey,
+		Summary:            summary,
+		Description:        description.EditorText,
+		DescriptionContent: description.WithoutImageData(),
+		Status:             optimisticStatus("new"),
+		IssueType:          jira.IssueType{ID: m.cfg.Jira.IssueTypeTaskID, Name: "Task"},
 		Assignee: &jira.User{
 			AccountID:   m.cfg.Jira.AccountID,
 			DisplayName: firstNonEmpty(m.cfg.Jira.DisplayName, "You"),
 			Email:       m.cfg.Jira.Username,
 		},
 		Updated: time.Now(),
+	}
+	journal, err := tasksave.NewCreate(tempKey, issue, tasksave.Draft{
+		Summary:     summary,
+		Description: description,
+	}, time.Now())
+	if err != nil {
+		return func() tea.Msg { return errMsg{Err: err} }
 	}
 	m.pendingCreates[tempKey] = issue
 	m.issues = append(m.issues, issue)
@@ -91,17 +166,9 @@ func (m *Model) createTaskCmd() tea.Cmd {
 	m.createDescription.SetValue("")
 	m.status = tempKey + " queued"
 	m.recalcTotals()
-	input := service.TaskInput{Summary: summary, Description: description}
-	createCmd := func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		defer cancel()
-		created, err := m.service.CreateTask(ctx, input)
-		if err != nil {
-			return taskCreateFailedMsg{TempKey: tempKey, Err: err}
-		}
-		return taskCreatedMsg{TempKey: tempKey, Issue: created}
-	}
-	return tea.Batch(m.saveCacheCmd(), createCmd)
+	m.taskSaves[journal.ID] = journal
+	m.runningTaskSaves[journal.ID] = true
+	return tea.Batch(m.saveCacheCmd(), m.runTaskSaveCmd(journal))
 }
 
 func (m *Model) updateTaskCmd() tea.Cmd {
@@ -110,38 +177,102 @@ func (m *Model) updateTaskCmd() tea.Cmd {
 	}
 	key := m.editingTaskKey
 	originalSummary := m.editingTaskOriginal
-	originalDescription := m.editingTaskDescription
 	summary := strings.TrimSpace(m.createSummary.Value())
-	description := strings.TrimSpace(m.createDescription.Value())
 	if summary == "" {
 		return func() tea.Msg { return errMsg{Err: fmt.Errorf("summary is required")} }
 	}
-	m.pendingTaskUpdates[key] = pendingTaskUpdate{
-		Original: taskContent{Summary: originalSummary, Description: originalDescription},
-		Desired:  taskContent{Summary: summary, Description: description},
+	description := m.editingDescription
+	writeDescription := description.Editable && m.createDescription.Value() != m.editingTaskOriginalDescription.EditorText
+	if writeDescription {
+		var err error
+		description, err = jira.ParseDescriptionEditor(m.createDescription.Value(), description)
+		if err != nil {
+			return func() tea.Msg { return errMsg{Err: err} }
+		}
 	}
-	m.updateIssueContent(key, summary, description)
+	writeSummary := summary != originalSummary
+	if !writeSummary && !writeDescription {
+		m.screen = screenMain
+		return nil
+	}
+	issue, ok := m.issueByKey(key)
+	if !ok {
+		return func() tea.Msg { return errMsg{Err: fmt.Errorf("task %s is no longer available", key)} }
+	}
+	journal, err := tasksave.NewUpdate(issue, tasksave.Draft{
+		Summary:          summary,
+		Description:      description,
+		WriteSummary:     writeSummary,
+		WriteDescription: writeDescription,
+	}, time.Now())
+	if err != nil {
+		return func() tea.Msg { return errMsg{Err: err} }
+	}
+	m.pendingTaskUpdates[key] = pendingTaskUpdate{
+		Original: taskContent{Summary: originalSummary, Description: m.editingTaskOriginalDescription.EditorText},
+		Desired:  taskContent{Summary: summary, Description: description.EditorText},
+	}
+	m.taskSaves[journal.ID] = journal
+	m.runningTaskSaves[journal.ID] = true
+	m.updateIssueContent(key, summary, description.EditorText)
+	if current, ok := m.issueByKey(key); ok {
+		current.DescriptionContent = description
+		m.replaceIssue(key, current)
+	}
 	m.screen = screenMain
 	m.editingTaskKey = ""
 	m.editingTaskOriginal = ""
-	m.editingTaskDescription = ""
+	m.editingTaskOriginalDescription = jira.Description{}
+	m.editingDescription = jira.Description{}
 	m.status = key + " queued"
-	return tea.Batch(m.saveCacheCmd(), func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		input := service.TaskInput{Summary: summary, Description: description}
-		if err := m.service.UpdateTask(ctx, key, input); err != nil {
-			return taskUpdateFailedMsg{
-				Key:                 key,
-				Summary:             summary,
-				Description:         description,
-				OriginalSummary:     originalSummary,
-				OriginalDescription: originalDescription,
-				Err:                 err,
-			}
+	return tea.Batch(m.saveCacheCmd(), m.runTaskSaveCmd(journal))
+}
+
+func (m *Model) runTaskSaveCmd(journal tasksave.Journal) tea.Cmd {
+	cfg := m.cfg
+	service := m.service
+	return func() tea.Msg {
+		if err := localstore.SaveTaskJournal(cfg, journal); err != nil {
+			return taskSaveFinishedMsg{Journal: journal, Err: err}
 		}
-		return taskUpdatedMsg{Key: key, Summary: summary, Description: description}
-	})
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		journal, err := service.SaveTask(ctx, journal, func(progress tasksave.Journal) error {
+			return localstore.SaveTaskJournal(cfg, progress)
+		})
+		if err == nil && journal.Complete() {
+			err = localstore.DeleteTaskJournal(cfg, journal.ID)
+		}
+		return taskSaveFinishedMsg{Journal: journal, Err: err}
+	}
+}
+
+func (m *Model) retryTaskSaveCmd() tea.Cmd {
+	journal, ok := m.selectedTaskSave()
+	if !ok || m.runningTaskSaves[journal.ID] {
+		return nil
+	}
+	if journal.Expired(time.Now()) {
+		return m.abandonTaskSaveCmd(true)
+	}
+	m.runningTaskSaves[journal.ID] = true
+	m.status = "Retrying Task Draft save for " + journal.Projection().Key
+	if isPartialSave(journal) {
+		m.status = "Retrying Partial Save for " + journal.Projection().Key
+	}
+	return m.runTaskSaveCmd(journal)
+}
+
+func (m *Model) abandonTaskSaveCmd(expired bool) tea.Cmd {
+	journal, ok := m.selectedTaskSave()
+	if !ok || m.runningTaskSaves[journal.ID] {
+		return nil
+	}
+	cfg := m.cfg
+	return func() tea.Msg {
+		err := localstore.DeleteTaskJournal(cfg, journal.ID)
+		return taskSaveAbandonedMsg{Journal: journal, Expired: expired, Err: err}
+	}
 }
 
 func (m *Model) deleteTaskCmd() tea.Cmd {

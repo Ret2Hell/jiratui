@@ -330,7 +330,18 @@ func (m *Model) renderCreateModal() string {
 	}
 	descriptionFooter := ""
 	if m.createFocus == 1 {
-		descriptionFooter = "ctrl+s save  •  esc cancel"
+		switch {
+		case m.imagePastePending:
+			descriptionFooter = m.spinner.View() + " reading clipboard  •  esc cancel"
+		case !m.editingDescription.Editable:
+			descriptionFooter = "read-only: " + m.editingDescription.UnsupportedReason
+		case m.attachmentMetaLoading:
+			descriptionFooter = "checking Jira attachment limits  •  ctrl+s save  •  esc cancel"
+		case !m.imagePasteAvailable:
+			descriptionFooter = m.imagePasteUnavailableReason + "  •  ctrl+s save  •  esc cancel"
+		default:
+			descriptionFooter = "ctrl+o paste image  •  ctrl+s save  •  esc cancel"
+		}
 	}
 	summaryPanel := m.renderPanelSpec(panelSpec{
 		Title:   title + " · Summary",
