@@ -301,6 +301,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.imagePasteAvailable = false
 		m.status = "Setup saved"
 		cmds = append(cmds, m.loadCacheCmd(), m.loadTaskJournalsCmd(), m.loadAttachmentMetaCmd(), m.loadSprintCmd())
+	case themeSavedMsg:
+		m.err = nil
+		m.status = fmt.Sprintf("Theme %q saved", msg.Name)
+	case themeSaveFailedMsg:
+		m.err = msg.Err
+		m.status = fmt.Sprintf("Could not save theme %q: %v", msg.Name, msg.Err)
 	case errMsg:
 		m.refreshingReport = false
 		m.openReportWhenReady = false
@@ -333,6 +339,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.updateReport(key, msg))
 		case screenHelp:
 			cmds = append(cmds, m.updateKeybindingsModal(key))
+		case screenTheme:
+			cmds = append(cmds, m.updateThemePicker(key))
 		}
 	}
 
@@ -354,6 +362,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateMouseWheel(wheel)
 		case screenHelp:
 			m.scrollKeybindingsModal(wheel)
+		case screenTheme:
+			m.scrollThemePicker(wheel)
 		}
 	}
 	return m, tea.Batch(cmds...)
@@ -489,6 +499,8 @@ func (m *Model) updateMain(key tea.KeyPressMsg) tea.Cmd {
 		return m.quickMoveCmd("done")
 	case cmdReport:
 		return m.openReportCmd()
+	case cmdTheme:
+		m.openThemePicker()
 	case cmdRetrySave:
 		return m.retryTaskSaveCmd()
 	case cmdAbandonSave:

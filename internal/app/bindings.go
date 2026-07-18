@@ -20,6 +20,7 @@ const (
 	cmdProgress    commandID = "progress"
 	cmdDone        commandID = "done"
 	cmdReport      commandID = "report"
+	cmdTheme       commandID = "theme"
 	cmdFocus       commandID = "focus"
 	cmdUp          commandID = "up"
 	cmdDown        commandID = "down"
@@ -60,6 +61,7 @@ func mainBindings() []binding {
 		{cmdProgress, []string{"p", "i"}, "move to In Progress", "In Progress", true, 6},
 		{cmdDone, []string{"d", "x"}, "move to Done", "Done", true, 6},
 		{cmdReport, []string{"m", "shift+m"}, "open daily report", "Daily report", false, 5},
+		{cmdTheme, []string{"shift+t"}, "choose application theme", "Theme", false, 5},
 		{cmdFilter, []string{"/"}, "filter tickets", "Filter", false, 7},
 		{cmdRefresh, []string{"r"}, "refresh tickets", "Refresh", false, 4},
 		{cmdRetrySave, []string{"ctrl+r"}, "retry the selected task save", "Retry save", true, 9},
@@ -129,6 +131,19 @@ func keybindingsModalBindings() []binding {
 	}
 }
 
+func themePickerBindings() []binding {
+	return []binding{
+		{cmdUp, []string{"up", "k"}, "preview previous theme", "Up", false, 5},
+		{cmdDown, []string{"down", "j"}, "preview next theme", "Down", false, 5},
+		{cmdPageUp, []string{"pgup"}, "preview one page up", "Page up", false, 5},
+		{cmdPageDown, []string{"pgdown"}, "preview one page down", "Page down", false, 5},
+		{cmdHome, []string{"home", "g"}, "preview the first theme", "First", false, 5},
+		{cmdEnd, []string{"end", "shift+g"}, "preview the last theme", "Last", false, 5},
+		{cmdSave, []string{"enter"}, "select this theme", "Select", true, 10},
+		{cmdCancel, []string{"esc", "q", "shift+t"}, "close without changing the theme", "Cancel", true, 10},
+	}
+}
+
 func (m *Model) activeBindings() []binding {
 	switch m.screen {
 	case screenCreate:
@@ -141,6 +156,8 @@ func (m *Model) activeBindings() []binding {
 		return reportBindings()
 	case screenHelp:
 		return keybindingsModalBindings()
+	case screenTheme:
+		return themePickerBindings()
 	case screenSetup:
 		label := "Continue"
 		if m.setupStage == 1 {
@@ -239,6 +256,8 @@ func keyLabel(key string) string {
 		return "G"
 	case "shift+a":
 		return "A"
+	case "shift+t":
+		return "T"
 	default:
 		return key
 	}

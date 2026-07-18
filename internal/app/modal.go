@@ -117,7 +117,7 @@ func (m *Model) keybindingMenuGroups() []bindingGroup {
 		return []bindingGroup{
 			{Title: "Tasks", Bindings: bindingsForCommands(main, cmdNew, cmdEdit, cmdDelete, cmdPoints)},
 			{Title: "Workflow", Bindings: bindingsForCommands(main, cmdTodo, cmdProgress, cmdDone)},
-			{Title: "View", Bindings: bindingsForCommands(main, cmdReport, cmdFilter, cmdRefresh)},
+			{Title: "View", Bindings: bindingsForCommands(main, cmdReport, cmdTheme, cmdFilter, cmdRefresh)},
 			{Title: "Navigation", Bindings: bindingsForCommands(main, cmdUp, cmdDown, cmdPageUp, cmdPageDown, cmdHome, cmdEnd, cmdFocus)},
 			{Title: "Application", Bindings: application},
 		}

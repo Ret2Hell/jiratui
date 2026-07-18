@@ -66,6 +66,18 @@ func (m *Model) saveCacheCmd() tea.Cmd {
 	}
 }
 
+func (m *Model) saveThemeCmd(name string) tea.Cmd {
+	cfg := m.cfg
+	cfg.UI.Theme = name
+	path := m.configPath
+	return func() tea.Msg {
+		if err := config.Save(path, cfg); err != nil {
+			return themeSaveFailedMsg{Name: name, Err: err}
+		}
+		return themeSavedMsg{Name: name}
+	}
+}
+
 func (m *Model) loadSprintCmd() tea.Cmd {
 	return func() tea.Msg {
 		if m.service == nil {

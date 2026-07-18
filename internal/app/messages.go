@@ -97,6 +97,15 @@ type setupSavedMsg struct {
 	Service service.Service
 }
 
+type themeSavedMsg struct {
+	Name string
+}
+
+type themeSaveFailedMsg struct {
+	Name string
+	Err  error
+}
+
 type errMsg struct {
 	Err error
 }

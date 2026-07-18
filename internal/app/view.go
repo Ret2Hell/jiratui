@@ -32,6 +32,8 @@ func (m *Model) View() tea.View {
 			content = m.renderReport()
 		case screenHelp:
 			content = m.renderKeybindingsModal()
+		case screenTheme:
+			content = m.renderThemePicker()
 		default:
 			content = m.renderMain()
 		}
@@ -60,6 +62,8 @@ func (m *Model) minimumScreenSize() (int, int) {
 	case screenReport:
 		return 40, 10
 	case screenHelp:
+		return 30, 10
+	case screenTheme:
 		return 30, 10
 	default:
 		return 20, 6

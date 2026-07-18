@@ -3,6 +3,7 @@ package app
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/spinner"
@@ -18,6 +19,7 @@ import (
 	"github.com/Ret2Hell/jiratui/internal/report"
 	"github.com/Ret2Hell/jiratui/internal/service"
 	"github.com/Ret2Hell/jiratui/internal/tasksave"
+	"github.com/Ret2Hell/jiratui/internal/theme"
 )
 
 type screen int
@@ -30,6 +32,7 @@ const (
 	screenPoints
 	screenReport
 	screenHelp
+	screenTheme
 )
 
 type focusArea int
@@ -54,6 +57,16 @@ type pendingTaskUpdate struct {
 	Desired  taskContent
 }
 
+type themePickerState struct {
+	snapshotTheme      theme.Theme
+	snapshotConfigName string
+	snapshotConfig     string
+	activeName         string
+	selectedName       string
+	cursor             int
+	scroll             int
+}
+
 // Model is the root Bubble Tea model.
 type Model struct {
 	cfg        config.Config
@@ -67,9 +80,15 @@ type Model struct {
 	screen screen
 	focus  focusArea
 
-	styles styles
-	zones  *zone.Manager
-	prefix string
+	styles        styles
+	zones         *zone.Manager
+	prefix        string
+	themeDir      string
+	themeDirErr   error
+	themeRegistry theme.Registry
+	activeTheme   theme.Theme
+	themeWarnings []error
+	themePicker   themePickerState
 
 	spinner             spinner.Model
 	loading             bool
@@ -142,6 +161,20 @@ type Model struct {
 
 // New creates the root TUI model.
 func New(cfg config.Config, configPath string, svc service.Service, factory service.Factory, initialStatus string, forceSetup bool) *Model {
+	themeDir, themeDirErr := config.ThemeDir(configPath)
+	registry := theme.LoadAll(themeDir)
+	themeWarnings := slices.Clone(registry.Warnings)
+	if themeDirErr != nil {
+		themeWarnings = append(themeWarnings, themeDirErr)
+	}
+	activeTheme, found := registry.Resolve(cfg.UI.Theme)
+	if !found {
+		activeTheme = theme.Default()
+		if strings.TrimSpace(initialStatus) == "" {
+			initialStatus = fmt.Sprintf("Theme %q not found; using terminal colors", cfg.UI.Theme)
+		}
+	}
+
 	m := &Model{
 		cfg:                   cfg,
 		configPath:            configPath,
@@ -151,10 +184,14 @@ func New(cfg config.Config, configPath string, svc service.Service, factory serv
 		imageUploadLimit:      imageclip.MaxImageBytes,
 		imagePasteAvailable:   forceSetup || svc == nil || !cfg.IsConfigured(),
 		attachmentMetaLoading: !forceSetup && svc != nil && cfg.IsConfigured(),
-		styles:                newStyles(),
 		zones:                 zone.New(),
 		spinner:               spinner.New(spinner.WithSpinner(spinner.Dot)),
 		status:                initialStatus,
+		themeDir:              themeDir,
+		themeDirErr:           themeDirErr,
+		themeRegistry:         registry,
+		activeTheme:           activeTheme,
+		themeWarnings:         themeWarnings,
 		pendingPointOriginals: make(map[string]*float64),
 		pendingStatusOriginal: make(map[string]jira.Status),
 		pendingTaskUpdates:    make(map[string]pendingTaskUpdate),
@@ -167,6 +204,7 @@ func New(cfg config.Config, configPath string, svc service.Service, factory serv
 	}
 	m.prefix = m.zones.NewPrefix()
 	m.initInputs()
+	m.applyTheme(activeTheme)
 	if forceSetup || svc == nil || !cfg.IsConfigured() {
 		m.screen = screenSetup
 		if !forceSetup && cfg.IsJiraConfigured() {
