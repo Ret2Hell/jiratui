@@ -34,7 +34,7 @@ func TestGenerateDaily(t *testing.T) {
 	}
 }
 
-func TestGenerateDailyOnlyReportsTicketsChangedTodayToDoneOrProgress(t *testing.T) {
+func TestGenerateDailyAlwaysReportsCurrentWorkInProgress(t *testing.T) {
 	today := time.Date(2026, 7, 5, 10, 0, 0, 0, time.UTC)
 	yesterday := today.Add(-24 * time.Hour)
 	issues := []jira.Issue{
@@ -50,8 +50,8 @@ func TestGenerateDailyOnlyReportsTicketsChangedTodayToDoneOrProgress(t *testing.
 	if strings.Contains(body, "Finished yesterday") {
 		t.Fatalf("old done issue should not be reported as done today:\n%s", body)
 	}
-	if strings.Contains(body, "Still being worked on") {
-		t.Fatalf("current in-progress issue should not be reported without a progress change today:\n%s", body)
+	if !strings.Contains(body, "- Still being worked on. [R2-2]") {
+		t.Fatalf("current in-progress issue should be reported regardless of when its status changed:\n%s", body)
 	}
 }
 

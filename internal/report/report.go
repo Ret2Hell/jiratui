@@ -54,29 +54,26 @@ func GenerateDaily(issues []jira.Issue, changes []jira.StatusChange, opts Option
 	for _, issue := range issues {
 		issueByKey[issue.Key] = issue
 	}
-	doneKeys := map[string]struct{}{}
-	wipKeys := map[string]struct{}{}
-	todaysChanges := filterReportChanges(changes, opts)
-	for _, change := range todaysChanges {
-		category := change.ToCategory
-		if category == "" {
-			category = jira.StatusCategoryForName(change.ToStatus)
-		}
-		switch category {
-		case "done":
-			doneKeys[change.IssueKey] = struct{}{}
-			delete(wipKeys, change.IssueKey)
-		case "indeterminate":
-			wipKeys[change.IssueKey] = struct{}{}
-			delete(doneKeys, change.IssueKey)
-		default:
-			delete(doneKeys, change.IssueKey)
-			delete(wipKeys, change.IssueKey)
+	reportCategory := map[string]string{}
+	for _, change := range filterReportChanges(changes, opts) {
+		category := cmp.Or(change.ToCategory, jira.StatusCategoryForName(change.ToStatus))
+		if category == "done" || category == "indeterminate" {
+			reportCategory[change.IssueKey] = category
+		} else {
+			delete(reportCategory, change.IssueKey)
 		}
 	}
-	done := issuesFromKeys(doneKeys, issueByKey)
-	wip := issuesFromKeys(wipKeys, issueByKey)
-	todo := []jira.Issue{}
+
+	// Current work in progress belongs in every report, regardless of when its
+	// status changed. It also takes precedence over today's change history.
+	for _, issue := range issues {
+		if issueStatusCategory(issue) == "indeterminate" {
+			reportCategory[issue.Key] = "indeterminate"
+		}
+	}
+
+	done := issuesInCategory(reportCategory, "done", issueByKey)
+	wip := issuesInCategory(reportCategory, "indeterminate", issueByKey)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "📍 %s\n\n", projectLabel)
@@ -87,7 +84,7 @@ func GenerateDaily(issues []jira.Issue, changes []jira.StatusChange, opts Option
 	b.WriteString("\n❌ Blockers/Pain points\n")
 	fmt.Fprintf(&b, "- %s\n", blockersDefault)
 	b.WriteString("\n📝 TODO Next\n")
-	writeIssueLines(&b, todo, opts.IssueBaseURL)
+	writeIssueLines(&b, nil, opts.IssueBaseURL)
 	fmt.Fprintf(&b, "\n🚦%s Delivery: %s\n", sprintLabel(opts.SprintName), delivery)
 	return b.String()
 }
@@ -140,14 +137,17 @@ func issueStatusCategory(issue jira.Issue) string {
 	return jira.StatusCategoryForName(issue.Status.Name)
 }
 
-func issuesFromKeys(keys map[string]struct{}, issueByKey map[string]jira.Issue) []jira.Issue {
-	issues := make([]jira.Issue, 0, len(keys))
-	for key := range keys {
-		if issue, ok := issueByKey[key]; ok {
-			issues = append(issues, issue)
-		} else {
-			issues = append(issues, jira.Issue{Key: key, Summary: key})
+func issuesInCategory(categories map[string]string, category string, issueByKey map[string]jira.Issue) []jira.Issue {
+	issues := make([]jira.Issue, 0, len(categories))
+	for key, issueCategory := range categories {
+		if issueCategory != category {
+			continue
 		}
+		issue, ok := issueByKey[key]
+		if !ok {
+			issue = jira.Issue{Key: key, Summary: key}
+		}
+		issues = append(issues, issue)
 	}
 	slices.SortFunc(issues, func(a, b jira.Issue) int { return strings.Compare(a.Key, b.Key) })
 	return issues
